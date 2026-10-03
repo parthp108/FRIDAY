@@ -1,3 +1,4 @@
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -13,7 +14,7 @@ android {
 
     defaultConfig {
         applicationId = "com.health.friday"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
@@ -54,6 +55,9 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+
+    // Health Connect
+    implementation("androidx.health.connect:connect-client:1.2.0-alpha06")
 
     testImplementation(libs.junit)
 

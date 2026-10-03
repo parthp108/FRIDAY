@@ -1,39 +1,76 @@
-
 package com.health.friday
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.health.friday.assistant.AssistantScreen
 import com.health.friday.ai.AiOrchestrator
 import com.health.friday.ai.AiToolRegistry
+import com.health.friday.ai.GeminiAiClient
 import com.health.friday.ai.LocalAiClient
+import com.health.friday.ai.RoutingAiClient
+import com.health.friday.assistant.AssistantScreen
 import com.health.friday.data.local.FridayDatabase
-import com.health.friday.data.local.WaterDao
+import com.health.friday.device.DeviceUsageRepository
+import com.health.friday.device.HealthConnectRepository
+import com.health.friday.health.HealthScreen
+import com.health.friday.home.HomeScreen
+import com.health.friday.journal.JournalRepository
+import com.health.friday.journal.JournalScreen
+import com.health.friday.nutrition.GetTodayNutritionTool
+import com.health.friday.nutrition.GetWeekNutritionTool
 import com.health.friday.nutrition.LocalNutritionProvider
+import com.health.friday.nutrition.LogMealTool
+import com.health.friday.nutrition.LogWaterTool
 import com.health.friday.nutrition.NutritionRepository
 import com.health.friday.nutrition.NutritionScreen
+import com.health.friday.nutrition.WaterRepository
+import com.health.friday.settings.SettingsRepository
+import com.health.friday.settings.SettingsScreen
+import com.health.friday.tasks.GoalRepository
+import com.health.friday.tasks.TasksScreen
+import com.health.friday.tasks.TodoRepository
 import com.health.friday.ui.theme.FRIDAYTheme
+import com.health.friday.ui.theme.FridayBackground
+import com.health.friday.ui.theme.FridayCard
+import com.health.friday.ui.theme.FridayCardLight
+import com.health.friday.ui.theme.FridayCyan
+import com.health.friday.ui.theme.FridayMuted
+import com.health.friday.ui.theme.FridayText
 
 class MainActivity : ComponentActivity() {
+
+    // Goes up every time the app comes to the foreground, so screens
+    // (like the phone usage card) can reload after you return from Settings.
+    private val resumeCount = mutableIntStateOf(0)
+
+    override fun onResume() {
+        super.onResume()
+        resumeCount.intValue = resumeCount.intValue + 1
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -43,23 +80,101 @@ class MainActivity : ComponentActivity() {
         val database =
             FridayDatabase.getDatabase(this)
 
+        val settingsRepository =
+            SettingsRepository(this)
+
+        // ---------------------------------------------------------
+        // HEALTH CONNECT
+        // ---------------------------------------------------------
+
+        val healthConnectRepository =
+            HealthConnectRepository(this)
+
+        // ---------------------------------------------------------
+        // NUTRITION
+        // ---------------------------------------------------------
+
         val nutritionProvider =
             LocalNutritionProvider()
 
         val nutritionRepository =
             NutritionRepository(
                 mealDao = database.mealDao(),
-                nutritionProvider = nutritionProvider
+                nutritionProvider = nutritionProvider,
+                healthConnectRepository = healthConnectRepository
             )
 
-        val waterDao =
-            database.waterDao()
+        val waterRepository =
+            WaterRepository(
+                waterDao = database.waterDao(),
+                healthConnectRepository = healthConnectRepository
+            )
 
-        val aiClient =
-            LocalAiClient()
+        // ---------------------------------------------------------
+        // TASKS / GOALS / JOURNAL
+        // ---------------------------------------------------------
+
+        val todoRepository =
+            TodoRepository(
+                todoDao = database.todoDao()
+            )
+
+        val goalRepository =
+            GoalRepository(
+                goalDao = database.goalDao()
+            )
+
+        val journalRepository =
+            JournalRepository(
+                journalDao = database.journalDao()
+            )
+
+        // ---------------------------------------------------------
+        // DEVICE USAGE
+        // ---------------------------------------------------------
+
+        val usageRepository =
+            DeviceUsageRepository(this)
+
+        // ---------------------------------------------------------
+        // AI TOOLS
+        // ---------------------------------------------------------
 
         val aiToolRegistry =
-            AiToolRegistry()
+            AiToolRegistry(
+                tools = listOf(
+                    LogMealTool(nutritionRepository),
+                    LogWaterTool(waterRepository),
+                    GetTodayNutritionTool(
+                        repository = nutritionRepository,
+                        waterRepository = waterRepository
+                    ),
+                    GetWeekNutritionTool(
+                        repository = nutritionRepository,
+                        waterRepository = waterRepository
+                    )
+                )
+            )
+
+        // ---------------------------------------------------------
+        // AI CLIENTS
+        // ---------------------------------------------------------
+
+        val localClient =
+            LocalAiClient()
+
+        val geminiClient =
+            GeminiAiClient(
+                settings = settingsRepository,
+                toolRegistry = aiToolRegistry
+            )
+
+        val aiClient =
+            RoutingAiClient(
+                settings = settingsRepository,
+                gemini = geminiClient,
+                local = localClient
+            )
 
         val aiOrchestrator =
             AiOrchestrator(
@@ -67,13 +182,29 @@ class MainActivity : ComponentActivity() {
                 toolRegistry = aiToolRegistry
             )
 
+        // ---------------------------------------------------------
+        // UI
+        // ---------------------------------------------------------
+
         setContent {
 
-            FRIDAYTheme {
+            FRIDAYTheme(
+                darkTheme = true,
+                dynamicColor = false
+            ) {
+
+                val usageRefreshKey =
+                    resumeCount.intValue
 
                 FridayApp(
                     nutritionRepository = nutritionRepository,
-                    waterDao = waterDao,
+                    waterRepository = waterRepository,
+                    todoRepository = todoRepository,
+                    goalRepository = goalRepository,
+                    journalRepository = journalRepository,
+                    usageRepository = usageRepository,
+                    settingsRepository = settingsRepository,
+                    usageRefreshKey = usageRefreshKey,
                     aiOrchestrator = aiOrchestrator
                 )
             }
@@ -84,7 +215,13 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FridayApp(
     nutritionRepository: NutritionRepository,
-    waterDao: WaterDao,
+    waterRepository: WaterRepository,
+    todoRepository: TodoRepository,
+    goalRepository: GoalRepository,
+    journalRepository: JournalRepository,
+    usageRepository: DeviceUsageRepository,
+    settingsRepository: SettingsRepository,
+    usageRefreshKey: Int,
     aiOrchestrator: AiOrchestrator
 ) {
 
@@ -92,185 +229,200 @@ fun FridayApp(
         mutableStateOf(0)
     }
 
-    val screens =
-        listOf(
-            "Home",
-            "Health",
-            "Nutrition",
-            "FRIDAY",
-            "Settings"
-        )
+    var showAssistant by remember {
+        mutableStateOf(false)
+    }
 
-    Scaffold(
+    var showJournal by remember {
+        mutableStateOf(false)
+    }
 
-        bottomBar = {
+    val closeAssistant: () -> Unit = {
+        showAssistant = false
+        aiOrchestrator.clearConversation()
+    }
 
-            NavigationBar {
+    if (showAssistant) {
 
-                screens.forEachIndexed { index, screen ->
+        BackHandler {
+            closeAssistant()
+        }
 
-                    NavigationBarItem(
+        Scaffold(
 
-                        selected =
-                            selectedScreen == index,
+            containerColor = FridayBackground,
+            contentColor = FridayText,
 
-                        onClick = {
-                            selectedScreen = index
-                        },
+            topBar = {
 
-                        icon = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
 
-                            Text(
-                                text =
-                                    when (index) {
-                                        0 -> "⌂"
-                                        1 -> "♥"
-                                        2 -> "🍽"
-                                        3 -> "●"
-                                        else -> "⚙"
-                                    }
-                            )
-                        },
-
-                        label = {
-                            Text(screen)
-                        }
-                    )
+                    TextButton(
+                        onClick = closeAssistant
+                    ) {
+                        Text(
+                            text = "Close",
+                            color = FridayCyan
+                        )
+                    }
                 }
             }
-        }
 
-    ) { innerPadding ->
+        ) { innerPadding ->
 
-        when (selectedScreen) {
-
-            0 -> FridayHomeScreen(
-                modifier =
-                    Modifier.padding(innerPadding)
-            )
-
-            1 -> PlaceholderScreen(
-                title = "Health",
-                modifier =
-                    Modifier.padding(innerPadding)
-            )
-
-            2 -> NutritionScreen(
-                repository =
-                    nutritionRepository,
-                waterDao =
-                    waterDao,
-                modifier =
-                    Modifier.padding(innerPadding)
-            )
-
-            3 -> AssistantScreen(
-                orchestrator =
-                    aiOrchestrator,
-                modifier =
-                    Modifier.padding(innerPadding)
-            )
-
-            4 -> PlaceholderScreen(
-                title = "Settings",
-                modifier =
-                    Modifier.padding(innerPadding)
+            AssistantScreen(
+                orchestrator = aiOrchestrator,
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .imePadding()
             )
         }
-    }
-}
 
-@Composable
-fun FridayHomeScreen(
-    modifier: Modifier = Modifier
-) {
+    } else if (showJournal) {
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(20.dp),
+        BackHandler {
+            showJournal = false
+        }
 
-        verticalArrangement =
-            Arrangement.Top
-    ) {
+        Scaffold(
 
-        Text(
-            text = "FRIDAY",
-            style =
-                MaterialTheme.typography.headlineMedium
-        )
+            containerColor = FridayBackground,
+            contentColor = FridayText
 
-        Text(
-            text = "Your personal operating system",
-            style =
-                MaterialTheme.typography.bodyLarge,
+        ) { innerPadding ->
 
-            modifier =
-                Modifier.padding(top = 6.dp)
-        )
+            JournalScreen(
+                repository = journalRepository,
+                onBack = {
+                    showJournal = false
+                },
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .imePadding()
+            )
+        }
 
-        Text(
-            text = "Health, life and device intelligence.",
-            style =
-                MaterialTheme.typography.bodyMedium,
+    } else {
 
-            modifier =
-                Modifier.padding(top = 4.dp)
-        )
+        val screens =
+            listOf(
+                "Home",
+                "Health",
+                "Nutrition",
+                "Tasks",
+                "Settings"
+            )
 
-        Text(
-            text = "Sleep      7h 42m",
-            modifier =
-                Modifier.padding(top = 30.dp)
-        )
+        val icons =
+            listOf(
+                "⌂",
+                "♥",
+                "🍽",
+                "✓",
+                "⚙"
+            )
 
-        Text(
-            text = "Heart      72 bpm",
-            modifier =
-                Modifier.padding(top = 16.dp)
-        )
+        Scaffold(
 
-        Text(
-            text = "Steps      3,241",
-            modifier =
-                Modifier.padding(top = 16.dp)
-        )
+            containerColor = FridayBackground,
+            contentColor = FridayText,
 
-        Text(
-            text = "Water      1.2 L",
-            modifier =
-                Modifier.padding(top = 16.dp)
-        )
-    }
-}
+            floatingActionButton = {
 
-@Composable
-fun PlaceholderScreen(
-    title: String,
-    modifier: Modifier = Modifier
-) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        showAssistant = true
+                    },
+                    containerColor = FridayCyan,
+                    contentColor = FridayBackground
+                ) {
+                    Text(
+                        text = "FRIDAY",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
 
-    Column(
-        modifier =
-            modifier.fillMaxSize(),
+            bottomBar = {
 
-        horizontalAlignment =
-            Alignment.CenterHorizontally,
+                NavigationBar(
+                    containerColor = FridayCard
+                ) {
 
-        verticalArrangement =
-            Arrangement.Center
-    ) {
+                    screens.forEachIndexed { index, screen ->
 
-        Text(
-            text = title,
-            style =
-                MaterialTheme.typography.headlineMedium
-        )
+                        NavigationBarItem(
 
-        Text(
-            text = "Coming next...",
-            modifier =
-                Modifier.padding(top = 8.dp)
-        )
+                            selected =
+                                selectedScreen == index,
+
+                            onClick = {
+                                selectedScreen = index
+                            },
+
+                            icon = {
+                                Text(text = icons[index])
+                            },
+
+                            label = {
+                                Text(screen)
+                            },
+
+                            colors =
+                                NavigationBarItemDefaults.colors(
+                                    selectedIconColor = FridayCyan,
+                                    selectedTextColor = FridayCyan,
+                                    indicatorColor = FridayCardLight,
+                                    unselectedIconColor = FridayMuted,
+                                    unselectedTextColor = FridayMuted
+                                )
+                        )
+                    }
+                }
+            }
+
+        ) { innerPadding ->
+
+            when (selectedScreen) {
+
+                0 -> HomeScreen(
+                    repository = nutritionRepository,
+                    waterRepository = waterRepository,
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                1 -> HealthScreen(
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                2 -> NutritionScreen(
+                    repository = nutritionRepository,
+                    waterRepository = waterRepository,
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                3 -> TasksScreen(
+                    todoRepository = todoRepository,
+                    goalRepository = goalRepository,
+                    usageRepository = usageRepository,
+                    usageRefreshKey = usageRefreshKey,
+                    onOpenJournal = {
+                        showJournal = true
+                    },
+                    modifier = Modifier.padding(innerPadding)
+                )
+
+                else -> SettingsScreen(
+                    settings = settingsRepository,
+                    modifier = Modifier.padding(innerPadding)
+                )
+            }
+        }
     }
 }

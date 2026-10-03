@@ -1,5 +1,6 @@
 package com.health.friday.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -21,5 +22,8 @@ data class Meal(
 
     val fat: Double = 0.0,
 
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(defaultValue = "0")
+    val isEstimated: Boolean = false
 )

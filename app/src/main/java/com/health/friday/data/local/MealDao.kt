@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.Flow
 interface MealDao {
 
     @Insert
-    suspend fun insertMeal(meal: Meal)
+    suspend fun insertMeal(meal: Meal): Long
 
     @Delete
     suspend fun deleteMeal(meal: Meal)

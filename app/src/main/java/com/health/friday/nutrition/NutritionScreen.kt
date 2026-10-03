@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,14 +19,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,206 +36,235 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.health.friday.data.local.Meal
-import com.health.friday.data.local.WaterDao
+import com.health.friday.data.local.WaterEntry
+import com.health.friday.ui.components.ScreenHeader
+import com.health.friday.ui.theme.FridayBackground
+import com.health.friday.ui.theme.FridayBlue
+import com.health.friday.ui.theme.FridayCard
+import com.health.friday.ui.theme.FridayCardLight
+import com.health.friday.ui.theme.FridayCyan
+import com.health.friday.ui.theme.FridayGreen
+import com.health.friday.ui.theme.FridayMuted
+import com.health.friday.ui.theme.FridayOrange
+import com.health.friday.ui.theme.FridayRed
+import com.health.friday.ui.theme.FridayText
+import com.health.friday.util.DayRange
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
-import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-
-private val FridayBackground = Color(0xFF080B10)
-private val FridayCard = Color(0xFF11161D)
-private val FridayCardLight = Color(0xFF171D25)
-
-private val FridayCyan = Color(0xFF00D9FF)
-private val FridayBlue = Color(0xFF3D7CFF)
-private val FridayGreen = Color(0xFF39E58C)
-private val FridayOrange = Color(0xFFFFB84D)
-private val FridayRed = Color(0xFFFF5C6C)
-
-private val FridayText = Color(0xFFF2F6FA)
-private val FridayMuted = Color(0xFF8D98A5)
 
 @Composable
 fun NutritionScreen(
     repository: NutritionRepository,
-    waterDao: WaterDao,
+    waterRepository: WaterRepository,
     modifier: Modifier = Modifier
 ) {
 
-    val calendar = remember {
-        Calendar.getInstance()
+    val scope = rememberCoroutineScope()
+
+    val todayStartFlow = remember {
+        DayRange.todayFlow().map { it.first }
     }
 
-    calendar.set(Calendar.HOUR_OF_DAY, 0)
-    calendar.set(Calendar.MINUTE, 0)
-    calendar.set(Calendar.SECOND, 0)
-    calendar.set(Calendar.MILLISECOND, 0)
+    val todayStart by todayStartFlow.collectAsState(
+        initial = DayRange.today().first
+    )
 
-    val startOfDay = calendar.timeInMillis
+    // 0 = today, -1 = yesterday, and so on.
+    var dayOffset by remember {
+        mutableIntStateOf(0)
+    }
 
-    calendar.add(Calendar.DAY_OF_YEAR, 1)
+    val selectedStart =
+        DayRange.shiftDays(todayStart, dayOffset)
 
-    val endOfDay = calendar.timeInMillis
+    val mealsFlow = remember(repository, selectedStart) {
+        repository.observeMealsForDay(selectedStart)
+    }
 
-    val meals by repository
-        .getTodayMeals(
-            startOfDay = startOfDay,
-            endOfDay = endOfDay
-        )
-        .collectAsState(initial = emptyList())
+    val waterFlow = remember(waterRepository, selectedStart) {
+        waterRepository.observeEntriesForDay(selectedStart)
+    }
 
-    val waterMl by waterDao
-        .getTodayWater(
-            startOfDay = startOfDay,
-            endOfDay = endOfDay
-        )
-        .collectAsState(initial = 0)
+    val meals by mealsFlow.collectAsState(initial = emptyList())
+    val waterEntries by waterFlow.collectAsState(initial = emptyList())
+
+    val waterMl = waterEntries.sumOf { it.amountMl }
 
     val calories = meals.sumOf { it.calories }
     val protein = meals.sumOf { it.protein }
     val carbs = meals.sumOf { it.carbohydrates }
     val fat = meals.sumOf { it.fat }
 
-    val calorieGoal = 2500
+    val calorieGoal = NutritionGoals.CALORIES
 
     val calorieProgress =
         (calories.toFloat() / calorieGoal)
             .coerceIn(0f, 1f)
 
-    val waterGoal = 2500
+    val waterGoal = NutritionGoals.WATER_ML
 
     val waterProgress =
         (waterMl.toFloat() / waterGoal)
             .coerceIn(0f, 1f)
 
-    val dateText = remember {
+    val dateText = remember(selectedStart) {
         SimpleDateFormat(
             "EEEE, dd MMMM",
             Locale.getDefault()
-        ).format(Date())
+        ).format(Date(selectedStart))
     }
 
-    var question by remember {
-        mutableStateOf("")
-    }
+    val dayLabel =
+        when (dayOffset) {
+            0 -> "Today"
+            -1 -> "Yesterday"
+            else -> dateText
+        }
 
-    Column(
+    LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(FridayBackground)
+            .background(FridayBackground),
+        contentPadding = PaddingValues(
+            start = 18.dp,
+            top = 18.dp,
+            end = 18.dp,
+            bottom = 96.dp
+        ),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding =
-                androidx.compose.foundation.layout.PaddingValues(
-                    start = 18.dp,
-                    top = 18.dp,
-                    end = 18.dp,
-                    bottom = 28.dp
-                ),
-            verticalArrangement =
-                Arrangement.spacedBy(14.dp)
-        ) {
+        item {
+            ScreenHeader(
+                title = "Nutrition",
+                subtitle = dateText
+            )
+        }
+
+        item {
+            DaySwitcher(
+                label = dayLabel,
+                canGoForward = dayOffset < 0,
+                onPrevious = { dayOffset -= 1 },
+                onNext = { dayOffset += 1 }
+            )
+        }
+
+        item {
+            CalorieCard(
+                calories = calories,
+                goal = calorieGoal,
+                progress = calorieProgress
+            )
+        }
+
+        item {
+            MacroRow(
+                protein = protein,
+                carbs = carbs,
+                fat = fat
+            )
+        }
+
+        item {
+            SectionTitle(
+                title = "MEALS"
+            )
+        }
+
+        if (meals.isEmpty()) {
 
             item {
-
-                Text(
-                    text = "NUTRITION",
-                    color = FridayText,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text = dateText,
-                    color = FridayMuted,
-                    fontSize = 14.sp,
-                    modifier =
-                        Modifier.padding(top = 3.dp)
-                )
+                EmptyMealCard()
             }
 
-            item {
+        } else {
 
-                CalorieCard(
-                    calories = calories,
-                    goal = calorieGoal,
-                    progress = calorieProgress
-                )
-            }
+            items(
+                items = meals,
+                key = { it.id }
+            ) { meal ->
 
-            item {
-
-                MacroRow(
-                    protein = protein,
-                    carbs = carbs,
-                    fat = fat
-                )
-            }
-
-            item {
-
-                SectionTitle(
-                    title = "TODAY'S MEALS"
-                )
-            }
-
-            if (meals.isEmpty()) {
-
-                item {
-                    EmptyMealCard()
-                }
-
-            } else {
-
-                items(
-                    items = meals,
-                    key = { it.id }
-                ) { meal ->
-
-                    MealCard(
-                        meal = meal
-                    )
-                }
-            }
-
-            item {
-
-                SectionTitle(
-                    title = "HYDRATION"
-                )
-            }
-
-            item {
-
-                HydrationCard(
-                    waterMl = waterMl,
-                    goalMl = waterGoal,
-                    progress = waterProgress
-                )
-            }
-
-            item {
-
-                SectionTitle(
-                    title = "FRIDAY INTELLIGENCE"
-                )
-            }
-
-            item {
-
-                FridayCard(
-                    question = question,
-                    onQuestionChange = {
-                        question = it
+                MealCard(
+                    meal = meal,
+                    onDelete = {
+                        scope.launch {
+                            repository.deleteMeal(meal)
+                        }
                     }
                 )
             }
         }
+
+        item {
+            SectionTitle(
+                title = "HYDRATION"
+            )
+        }
+
+        item {
+            HydrationCard(
+                waterMl = waterMl,
+                goalMl = waterGoal,
+                progress = waterProgress,
+                entries = waterEntries,
+                onDelete = { entry ->
+                    scope.launch {
+                        waterRepository.deleteWater(entry)
+                    }
+                }
+            )
+        }
     }
 }
 
+@Composable
+private fun DaySwitcher(
+    label: String,
+    canGoForward: Boolean,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit
+) {
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        TextButton(
+            onClick = onPrevious
+        ) {
+            Text(
+                text = "‹",
+                color = FridayCyan,
+                fontSize = 24.sp
+            )
+        }
+
+        Text(
+            text = label,
+            color = FridayText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+
+        TextButton(
+            onClick = onNext,
+            enabled = canGoForward
+        ) {
+            Text(
+                text = "›",
+                color = if (canGoForward) FridayCyan else FridayMuted,
+                fontSize = 24.sp
+            )
+        }
+    }
+}
 @Composable
 private fun CalorieCard(
     calories: Int,
@@ -253,8 +284,7 @@ private fun CalorieCard(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalAlignment =
-                Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically
         ) {
 
             Box(
@@ -272,8 +302,7 @@ private fun CalorieCard(
                 )
 
                 Column(
-                    horizontalAlignment =
-                        Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
 
                     Text(
@@ -327,8 +356,7 @@ private fun CalorieCard(
                             FridayRed
                         },
                     fontSize = 13.sp,
-                    modifier =
-                        Modifier.padding(top = 5.dp)
+                    modifier = Modifier.padding(top = 5.dp)
                 )
 
                 LinearProgressIndicator(
@@ -355,8 +383,7 @@ private fun MacroRow(
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement =
-            Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
 
         MacroCard(
@@ -415,8 +442,7 @@ private fun MacroCard(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp,
-                modifier =
-                    Modifier.padding(top = 4.dp)
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }
@@ -438,7 +464,8 @@ private fun SectionTitle(
 
 @Composable
 private fun MealCard(
-    meal: Meal
+    meal: Meal,
+    onDelete: () -> Unit
 ) {
 
     Card(
@@ -452,9 +479,13 @@ private fun MealCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment =
-                Alignment.CenterVertically
+                .padding(
+                    start = 16.dp,
+                    top = 8.dp,
+                    end = 4.dp,
+                    bottom = 8.dp
+                ),
+            verticalAlignment = Alignment.CenterVertically
         ) {
 
             Box(
@@ -478,11 +509,15 @@ private fun MealCard(
                 )
 
                 Text(
-                    text = meal.mealType,
+                    text =
+                        if (meal.isEstimated) {
+                            "${meal.mealType} · estimated"
+                        } else {
+                            meal.mealType
+                        },
                     color = FridayMuted,
                     fontSize = 12.sp,
-                    modifier =
-                        Modifier.padding(top = 2.dp)
+                    modifier = Modifier.padding(top = 2.dp)
                 )
 
                 Text(
@@ -492,8 +527,7 @@ private fun MealCard(
                                 "F ${meal.fat.toInt()}g",
                     color = FridayMuted,
                     fontSize = 11.sp,
-                    modifier =
-                        Modifier.padding(top = 8.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 )
             }
 
@@ -509,6 +543,15 @@ private fun MealCard(
                 color = FridayMuted,
                 fontSize = 10.sp
             )
+
+            TextButton(
+                onClick = onDelete
+            ) {
+                Text(
+                    text = "✕",
+                    color = FridayMuted
+                )
+            }
         }
     }
 }
@@ -536,12 +579,10 @@ private fun EmptyMealCard() {
             )
 
             Text(
-                text =
-                    "Tell FRIDAY what you ate and it will appear here.",
+                text = "Tell FRIDAY what you ate and it will appear here.",
                 color = FridayMuted,
                 fontSize = 13.sp,
-                modifier =
-                    Modifier.padding(top = 5.dp)
+                modifier = Modifier.padding(top = 5.dp)
             )
         }
     }
@@ -551,8 +592,17 @@ private fun EmptyMealCard() {
 private fun HydrationCard(
     waterMl: Int,
     goalMl: Int,
-    progress: Float
+    progress: Float,
+    entries: List<WaterEntry>,
+    onDelete: (WaterEntry) -> Unit
 ) {
+
+    val timeFormat = remember {
+        SimpleDateFormat(
+            "HH:mm",
+            Locale.getDefault()
+        )
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -568,8 +618,7 @@ private fun HydrationCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement =
-                    Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
 
                 Text(
@@ -600,75 +649,51 @@ private fun HydrationCard(
                 color = FridayBlue,
                 trackColor = FridayCardLight
             )
-        }
-    }
-}
 
-@Composable
-private fun FridayCard(
-    question: String,
-    onQuestionChange: (String) -> Unit
-) {
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FridayCard
-        )
-    ) {
-
-        Column(
-            modifier = Modifier.padding(18.dp)
-        ) {
-
-            Row(
-                verticalAlignment =
-                    Alignment.CenterVertically
-            ) {
-
-                Box(
-                    modifier = Modifier
-                        .size(9.dp)
-                        .clip(CircleShape)
-                        .background(FridayCyan)
-                )
+            if (entries.isEmpty()) {
 
                 Text(
-                    text = "FRIDAY",
-                    color = FridayCyan,
+                    text = "No water logged. Tell FRIDAY what you drank.",
+                    color = FridayMuted,
                     fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier =
-                        Modifier.padding(start = 9.dp)
+                    modifier = Modifier.padding(top = 12.dp)
                 )
+
+            } else {
+
+                for (entry in entries) {
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+
+                        Text(
+                            text = timeFormat.format(Date(entry.timestamp)),
+                            color = FridayMuted,
+                            fontSize = 13.sp,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Text(
+                            text = "${entry.amountMl} ml",
+                            color = FridayText,
+                            fontSize = 14.sp
+                        )
+
+                        TextButton(
+                            onClick = { onDelete(entry) }
+                        ) {
+                            Text(
+                                text = "✕",
+                                color = FridayMuted
+                            )
+                        }
+                    }
+                }
             }
-
-            Text(
-                text =
-                    "Ask me about your nutrition.",
-                color = FridayText,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-                modifier =
-                    Modifier.padding(top = 12.dp)
-            )
-
-            OutlinedTextField(
-                value = question,
-                onValueChange = onQuestionChange,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 12.dp),
-                placeholder = {
-                    Text(
-                        text = "Did I overeat today?",
-                        color = FridayMuted
-                    )
-                },
-                maxLines = 3
-            )
         }
     }
 }
