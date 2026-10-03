@@ -9,6 +9,7 @@ class AiOrchestrator(
     private val toolRegistry: AiToolRegistry
 ) {
 
+
     private val conversation =
         mutableListOf<AiMessage>()
 
@@ -41,7 +42,6 @@ class AiOrchestrator(
 
             var rounds = 0
 
-            // The AI may call tools, read the results, and call more tools.
             while (response.toolCalls.isNotEmpty() && rounds < MAX_TOOL_ROUNDS) {
 
                 for (toolCall in response.toolCalls) {
@@ -87,6 +87,82 @@ class AiOrchestrator(
         }
     }
 
+    suspend fun generateJournalFeedback(
+        journalText: String
+    ): String {
+
+        val cleanText =
+            journalText.trim()
+
+        if (cleanText.isEmpty()) {
+            throw IllegalArgumentException("Journal entry is empty")
+        }
+
+        val request =
+            """
+        Read the following journal entry and respond to the person like a good friend.
+
+        The response should:
+        - be short, around 1 to 3 sentences
+        - show that you understood what they wrote
+        - sound natural and conversational
+        - acknowledge what they are feeling or describing when appropriate
+        - give a small practical thought only when it genuinely helps
+        - never sound like a therapist, motivational speaker, or formal AI
+        - do not diagnose anything
+        - do not invent details that are not in the entry
+        - do not force advice when the person is simply sharing something
+        - do not use emojis
+        - do not start with a greeting
+        - do not mention that you are an AI
+        - return only the response that should appear under the journal entry
+
+        Journal entry:
+        $cleanText
+        """.trimIndent()
+
+        val response =
+            aiClient.sendMessage(
+                messages = listOf(
+                    AiMessage(
+                        role = "user",
+                        content = request
+                    )
+                ),
+                context = AiContext(
+                    section = "journal"
+                )
+            )
+
+        if (response.toolCalls.isNotEmpty()) {
+            throw IllegalStateException(
+                "Journal feedback unexpectedly requested an app tool"
+            )
+        }
+
+        val feedback =
+            response.message.trim()
+
+        if (feedback.isEmpty()) {
+            throw IllegalStateException(
+                "AI returned empty journal feedback"
+            )
+        }
+
+        return feedback
+    }
+
+    fun restoreConversation(
+        messages: List<AiMessage>
+    ) {
+        conversation.clear()
+        conversation.addAll(messages)
+    }
+
+    fun clearConversation() {
+        conversation.clear()
+    }
+
     private suspend fun runTool(
         toolCall: AiToolCall
     ): String {
@@ -104,7 +180,5 @@ class AiOrchestrator(
         }
     }
 
-    fun clearConversation() {
-        conversation.clear()
-    }
+
 }

@@ -1,3 +1,4 @@
+
 package com.health.friday
 
 import android.os.Bundle
@@ -5,12 +6,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -19,20 +29,28 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.health.friday.ai.AiMessage
 import com.health.friday.ai.AiOrchestrator
 import com.health.friday.ai.AiToolRegistry
 import com.health.friday.ai.GeminiAiClient
 import com.health.friday.ai.LocalAiClient
 import com.health.friday.ai.RoutingAiClient
 import com.health.friday.assistant.AssistantScreen
+import com.health.friday.chat.ChatRepository
+import com.health.friday.data.local.ChatConversation
+import com.health.friday.data.local.ChatMessage
 import com.health.friday.data.local.FridayDatabase
 import com.health.friday.device.DeviceUsageRepository
 import com.health.friday.device.HealthConnectRepository
@@ -43,6 +61,7 @@ import com.health.friday.journal.JournalScreen
 import com.health.friday.nutrition.GetTodayNutritionTool
 import com.health.friday.nutrition.GetWeekNutritionTool
 import com.health.friday.nutrition.LocalNutritionProvider
+import com.health.friday.nutrition.LogEstimatedMealTool
 import com.health.friday.nutrition.LogMealTool
 import com.health.friday.nutrition.LogWaterTool
 import com.health.friday.nutrition.NutritionRepository
@@ -51,8 +70,10 @@ import com.health.friday.nutrition.WaterRepository
 import com.health.friday.settings.SettingsRepository
 import com.health.friday.settings.SettingsScreen
 import com.health.friday.tasks.GoalRepository
+import com.health.friday.tasks.GoalTool
 import com.health.friday.tasks.TasksScreen
 import com.health.friday.tasks.TodoRepository
+import com.health.friday.tasks.TodoTool
 import com.health.friday.ui.theme.FRIDAYTheme
 import com.health.friday.ui.theme.FridayBackground
 import com.health.friday.ui.theme.FridayCard
@@ -60,11 +81,13 @@ import com.health.friday.ui.theme.FridayCardLight
 import com.health.friday.ui.theme.FridayCyan
 import com.health.friday.ui.theme.FridayMuted
 import com.health.friday.ui.theme.FridayText
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    // Goes up every time the app comes to the foreground, so screens
-    // (like the phone usage card) can reload after you return from Settings.
     private val resumeCount = mutableIntStateOf(0)
 
     override fun onResume() {
@@ -83,16 +106,8 @@ class MainActivity : ComponentActivity() {
         val settingsRepository =
             SettingsRepository(this)
 
-        // ---------------------------------------------------------
-        // HEALTH CONNECT
-        // ---------------------------------------------------------
-
         val healthConnectRepository =
             HealthConnectRepository(this)
-
-        // ---------------------------------------------------------
-        // NUTRITION
-        // ---------------------------------------------------------
 
         val nutritionProvider =
             LocalNutritionProvider()
@@ -110,10 +125,6 @@ class MainActivity : ComponentActivity() {
                 healthConnectRepository = healthConnectRepository
             )
 
-        // ---------------------------------------------------------
-        // TASKS / GOALS / JOURNAL
-        // ---------------------------------------------------------
-
         val todoRepository =
             TodoRepository(
                 todoDao = database.todoDao()
@@ -129,21 +140,20 @@ class MainActivity : ComponentActivity() {
                 journalDao = database.journalDao()
             )
 
-        // ---------------------------------------------------------
-        // DEVICE USAGE
-        // ---------------------------------------------------------
+        val chatRepository =
+            ChatRepository(
+                conversationDao = database.chatConversationDao(),
+                messageDao = database.chatMessageDao()
+            )
 
         val usageRepository =
             DeviceUsageRepository(this)
-
-        // ---------------------------------------------------------
-        // AI TOOLS
-        // ---------------------------------------------------------
 
         val aiToolRegistry =
             AiToolRegistry(
                 tools = listOf(
                     LogMealTool(nutritionRepository),
+                    LogEstimatedMealTool(nutritionRepository),
                     LogWaterTool(waterRepository),
                     GetTodayNutritionTool(
                         repository = nutritionRepository,
@@ -152,13 +162,11 @@ class MainActivity : ComponentActivity() {
                     GetWeekNutritionTool(
                         repository = nutritionRepository,
                         waterRepository = waterRepository
-                    )
+                    ),
+                            TodoTool(todoRepository),
+                    GoalTool(goalRepository)
                 )
             )
-
-        // ---------------------------------------------------------
-        // AI CLIENTS
-        // ---------------------------------------------------------
 
         val localClient =
             LocalAiClient()
@@ -182,10 +190,6 @@ class MainActivity : ComponentActivity() {
                 toolRegistry = aiToolRegistry
             )
 
-        // ---------------------------------------------------------
-        // UI
-        // ---------------------------------------------------------
-
         setContent {
 
             FRIDAYTheme(
@@ -199,9 +203,11 @@ class MainActivity : ComponentActivity() {
                 FridayApp(
                     nutritionRepository = nutritionRepository,
                     waterRepository = waterRepository,
+                    healthConnectRepository = healthConnectRepository,
                     todoRepository = todoRepository,
                     goalRepository = goalRepository,
                     journalRepository = journalRepository,
+                    chatRepository = chatRepository,
                     usageRepository = usageRepository,
                     settingsRepository = settingsRepository,
                     usageRefreshKey = usageRefreshKey,
@@ -216,9 +222,11 @@ class MainActivity : ComponentActivity() {
 fun FridayApp(
     nutritionRepository: NutritionRepository,
     waterRepository: WaterRepository,
+    healthConnectRepository: HealthConnectRepository,
     todoRepository: TodoRepository,
     goalRepository: GoalRepository,
     journalRepository: JournalRepository,
+    chatRepository: ChatRepository,
     usageRepository: DeviceUsageRepository,
     settingsRepository: SettingsRepository,
     usageRefreshKey: Int,
@@ -233,26 +241,201 @@ fun FridayApp(
         mutableStateOf(false)
     }
 
+    var showHistory by remember {
+        mutableStateOf(false)
+    }
+
     var showJournal by remember {
         mutableStateOf(false)
     }
 
-    val closeAssistant: () -> Unit = {
+    var showSaveChatDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var assistantMessages by remember {
+        mutableStateOf<List<AiMessage>>(emptyList())
+    }
+
+    var restoredMessages by remember {
+        mutableStateOf<List<AiMessage>>(emptyList())
+    }
+
+    // ID of the saved conversation currently being edited.
+    // null means this is a brand-new conversation.
+    var activeConversationId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    val scope = rememberCoroutineScope()
+
+    fun closeWithoutSaving() {
+        showSaveChatDialog = false
         showAssistant = false
+        assistantMessages = emptyList()
+        restoredMessages = emptyList()
+        activeConversationId = null
         aiOrchestrator.clearConversation()
     }
 
-    if (showAssistant) {
+    fun requestCloseAssistant() {
+
+        val hasUserMessage =
+            assistantMessages.any {
+                it.role == "user" &&
+                        it.content.isNotBlank()
+            }
+
+        if (hasUserMessage) {
+            showSaveChatDialog = true
+        } else {
+            closeWithoutSaving()
+        }
+    }
+
+    fun saveAndCloseAssistant() {
+
+        val userMessage =
+            assistantMessages.firstOrNull {
+                it.role == "user" &&
+                        it.content.isNotBlank()
+            }
+
+        val title =
+            userMessage?.content
+                ?.trim()
+                ?.let {
+                    if (it.length > 50) {
+                        it.take(50) + "…"
+                    } else {
+                        it
+                    }
+                }
+                ?: "FRIDAY conversation"
+
+        val storedMessages =
+            assistantMessages.map {
+                ChatMessage(
+                    conversationId = 0,
+                    role = it.role,
+                    content = it.content
+                )
+            }
+
+        scope.launch {
+
+            chatRepository.saveConversation(
+                title = title,
+                messages = storedMessages,
+                conversationId = activeConversationId
+            )
+
+            closeWithoutSaving()
+        }
+    }
+
+    fun openSavedConversation(
+        conversation: ChatConversation
+    ) {
+
+        scope.launch {
+
+            val storedMessages =
+                chatRepository.getMessages(
+                    conversationId = conversation.id
+                )
+
+            val messages =
+                storedMessages.map {
+                    AiMessage(
+                        role = it.role,
+                        content = it.content
+                    )
+                }
+
+            aiOrchestrator.restoreConversation(messages)
+
+            restoredMessages = messages
+            assistantMessages = messages
+
+            activeConversationId = conversation.id
+
+            showHistory = false
+            showAssistant = true
+        }
+    }
+
+    if (showSaveChatDialog) {
+
+        AlertDialog(
+            onDismissRequest = {
+                showSaveChatDialog = false
+            },
+            title = {
+                Text("Save this conversation?")
+            },
+            text = {
+                Text(
+                    "You decide whether this FRIDAY conversation is saved."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        saveAndCloseAssistant()
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                Row {
+
+                    TextButton(
+                        onClick = {
+                            closeWithoutSaving()
+                        }
+                    ) {
+                        Text("Don't save")
+                    }
+
+                    TextButton(
+                        onClick = {
+                            showSaveChatDialog = false
+                        }
+                    ) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showHistory) {
 
         BackHandler {
-            closeAssistant()
+            showHistory = false
+        }
+
+        ChatHistoryScreen(
+            repository = chatRepository,
+            onBack = {
+                showHistory = false
+            },
+            onOpenConversation = {
+                openSavedConversation(it)
+            }
+        )
+
+    } else if (showAssistant) {
+
+        BackHandler {
+            requestCloseAssistant()
         }
 
         Scaffold(
-
             containerColor = FridayBackground,
             contentColor = FridayText,
-
             topBar = {
 
                 Row(
@@ -264,7 +447,9 @@ fun FridayApp(
                 ) {
 
                     TextButton(
-                        onClick = closeAssistant
+                        onClick = {
+                            requestCloseAssistant()
+                        }
                     ) {
                         Text(
                             text = "Close",
@@ -273,11 +458,17 @@ fun FridayApp(
                     }
                 }
             }
-
         ) { innerPadding ->
 
             AssistantScreen(
                 orchestrator = aiOrchestrator,
+                initialMessages = restoredMessages,
+                onMessagesChanged = {
+                    assistantMessages = it
+                },
+                onOpenHistory = {
+                    showHistory = true
+                },
                 modifier = Modifier
                     .padding(innerPadding)
                     .imePadding()
@@ -291,17 +482,36 @@ fun FridayApp(
         }
 
         Scaffold(
-
             containerColor = FridayBackground,
             contentColor = FridayText
-
         ) { innerPadding ->
 
             JournalScreen(
                 repository = journalRepository,
+
                 onBack = {
                     showJournal = false
                 },
+
+                onSendWithFeedback = { entryText ->
+
+                    val entry =
+                        journalRepository.saveEntry(entryText)
+                            ?: throw IllegalArgumentException(
+                                "Journal entry is empty"
+                            )
+
+                    val feedback =
+                        aiOrchestrator.generateJournalFeedback(
+                            journalText = entryText
+                        )
+
+                    journalRepository.attachFeedback(
+                        entry = entry,
+                        feedback = feedback
+                    )
+                },
+
                 modifier = Modifier
                     .padding(innerPadding)
                     .imePadding()
@@ -329,7 +539,6 @@ fun FridayApp(
             )
 
         Scaffold(
-
             containerColor = FridayBackground,
             contentColor = FridayText,
 
@@ -337,6 +546,10 @@ fun FridayApp(
 
                 ExtendedFloatingActionButton(
                     onClick = {
+                        restoredMessages = emptyList()
+                        assistantMessages = emptyList()
+                        activeConversationId = null
+                        aiOrchestrator.clearConversation()
                         showAssistant = true
                     },
                     containerColor = FridayCyan,
@@ -358,7 +571,6 @@ fun FridayApp(
                     screens.forEachIndexed { index, screen ->
 
                         NavigationBarItem(
-
                             selected =
                                 selectedScreen == index,
 
@@ -394,6 +606,7 @@ fun FridayApp(
                 0 -> HomeScreen(
                     repository = nutritionRepository,
                     waterRepository = waterRepository,
+                    todoRepository = todoRepository,
                     modifier = Modifier.padding(innerPadding)
                 )
 
@@ -426,3 +639,176 @@ fun FridayApp(
         }
     }
 }
+
+@Composable
+private fun ChatHistoryScreen(
+    repository: ChatRepository,
+    onBack: () -> Unit,
+    onOpenConversation: (ChatConversation) -> Unit
+) {
+
+    val conversations by repository
+        .getConversations()
+        .collectAsState(initial = emptyList())
+
+    val scope = rememberCoroutineScope()
+
+    val dateFormat =
+        remember {
+            SimpleDateFormat(
+                "dd MMM yyyy, HH:mm",
+                Locale.getDefault()
+            )
+        }
+
+    Scaffold(
+        containerColor = FridayBackground,
+        contentColor = FridayText
+    ) { innerPadding ->
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(FridayBackground)
+                .padding(innerPadding)
+        ) {
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(
+                        start = 8.dp,
+                        end = 16.dp,
+                        top = 8.dp,
+                        bottom = 8.dp
+                    ),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                TextButton(
+                    onClick = onBack
+                ) {
+                    Text(
+                        text = "‹ Back",
+                        color = FridayCyan
+                    )
+                }
+
+                Text(
+                    text = "Chat History",
+                    color = FridayText,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+
+            if (conversations.isEmpty()) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+
+                    Text(
+                        text = "No saved conversations.",
+                        color = FridayMuted
+                    )
+                }
+
+            } else {
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(
+                        start = 16.dp,
+                        top = 12.dp,
+                        end = 16.dp,
+                        bottom = 32.dp
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+
+                    items(
+                        items = conversations,
+                        key = { it.id }
+                    ) { conversation ->
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = FridayCard
+                            )
+                        ) {
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(
+                                        start = 16.dp,
+                                        top = 12.dp,
+                                        end = 8.dp,
+                                        bottom = 12.dp
+                                    ),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+
+                                Column(
+                                    modifier = Modifier.weight(1f)
+                                ) {
+
+                                    Text(
+                                        text = conversation.title,
+                                        color = FridayText,
+                                        fontWeight = FontWeight.Medium
+                                    )
+
+                                    Text(
+                                        text = dateFormat.format(
+                                            Date(conversation.updatedAt)
+                                        ),
+                                        color = FridayMuted,
+                                        modifier = Modifier.padding(
+                                            top = 4.dp
+                                        )
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = {
+                                        onOpenConversation(conversation)
+                                    }
+                                ) {
+                                    Text(
+                                        text = "Open",
+                                        color = FridayCyan
+                                    )
+                                }
+
+                                TextButton(
+                                    onClick = {
+
+                                        scope.launch {
+                                            repository.deleteConversation(
+                                                conversation
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    Text(
+                                        text = "Delete",
+                                        color = FridayMuted
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

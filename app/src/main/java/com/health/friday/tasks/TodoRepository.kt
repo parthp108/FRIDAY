@@ -1,8 +1,10 @@
+
 package com.health.friday.tasks
 
 import com.health.friday.data.local.TodoDao
 import com.health.friday.data.local.TodoItem
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class TodoRepository(
     private val todoDao: TodoDao
@@ -10,6 +12,10 @@ class TodoRepository(
 
     fun getTodos(): Flow<List<TodoItem>> {
         return todoDao.getAll()
+    }
+
+    suspend fun getTodosNow(): List<TodoItem> {
+        return todoDao.getAll().first()
     }
 
     // Returns the saved item, or null if the title was blank.
@@ -23,7 +29,9 @@ class TodoRepository(
             return null
         }
 
-        val item = TodoItem(title = cleanTitle)
+        val item = TodoItem(
+            title = cleanTitle
+        )
 
         val id = todoDao.insert(item)
 
@@ -38,7 +46,11 @@ class TodoRepository(
             item.copy(
                 isDone = done,
                 completedAt =
-                    if (done) System.currentTimeMillis() else null
+                    if (done) {
+                        System.currentTimeMillis()
+                    } else {
+                        null
+                    }
             )
         )
     }
@@ -49,3 +61,4 @@ class TodoRepository(
         todoDao.delete(item)
     }
 }
+

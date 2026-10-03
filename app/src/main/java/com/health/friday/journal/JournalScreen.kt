@@ -1,3 +1,4 @@
+
 package com.health.friday.journal
 
 import androidx.compose.foundation.background
@@ -48,8 +49,7 @@ fun JournalScreen(
     repository: JournalRepository,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    // null = AI feedback not available yet, so the button stays disabled.
-    onSendWithFeedback: ((String) -> Unit)? = null
+    onSendWithFeedback: (suspend (String) -> Unit)? = null
 ) {
 
     val scope = rememberCoroutineScope()
@@ -62,6 +62,14 @@ fun JournalScreen(
 
     var text by remember {
         mutableStateOf("")
+    }
+
+    var feedbackBusy by remember {
+        mutableStateOf(false)
+    }
+
+    var feedbackError by remember {
+        mutableStateOf<String?>(null)
     }
 
     val dateFormat = remember {
@@ -112,12 +120,14 @@ fun JournalScreen(
                 value = text,
                 onValueChange = {
                     text = it
+                    feedbackError = null
                 },
                 modifier = Modifier.fillMaxWidth(),
                 placeholder = {
                     Text("What's on your mind?")
                 },
-                minLines = 6
+                minLines = 6,
+                enabled = !feedbackBusy
             )
         }
 
@@ -136,7 +146,9 @@ fun JournalScreen(
                             repository.saveEntry(entryText)
                         }
                     },
-                    enabled = text.isNotBlank(),
+                    enabled =
+                        text.isNotBlank() &&
+                                !feedbackBusy,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = FridayCyan,
@@ -148,21 +160,60 @@ fun JournalScreen(
 
                 OutlinedButton(
                     onClick = {
-                        val entryText = text
-                        text = ""
-                        onSendWithFeedback?.invoke(entryText)
+
+                        val entryText = text.trim()
+
+                        scope.launch {
+
+                            feedbackBusy = true
+                            feedbackError = null
+
+                            try {
+
+                                onSendWithFeedback?.invoke(entryText)
+
+                                text = ""
+
+                            } catch (e: Exception) {
+
+                                feedbackError =
+                                    e.message
+                                        ?: "Could not generate feedback."
+
+                            } finally {
+
+                                feedbackBusy = false
+                            }
+                        }
                     },
                     enabled =
                         onSendWithFeedback != null &&
-                                text.isNotBlank(),
+                                text.isNotBlank() &&
+                                !feedbackBusy,
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
                         contentColor = FridayCyan,
                         disabledContentColor = FridayMuted
                     )
                 ) {
-                    Text("Send with feedback")
+                    Text(
+                        if (feedbackBusy) {
+                            "Thinking..."
+                        } else {
+                            "Send with feedback"
+                        }
+                    )
                 }
+            }
+        }
+
+        if (feedbackError != null) {
+            item {
+                Text(
+                    text = feedbackError!!,
+                    color = FridayMuted,
+                    fontSize = 12.sp
+                )
             }
         }
 
@@ -222,7 +273,12 @@ private fun JournalEntryCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 16.dp, top = 8.dp, end = 8.dp, bottom = 16.dp),
+                .padding(
+                    start = 16.dp,
+                    top = 8.dp,
+                    end = 8.dp,
+                    bottom = 16.dp
+                ),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 
@@ -289,3 +345,4 @@ private fun JournalEntryCard(
         }
     }
 }
+

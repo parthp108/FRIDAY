@@ -1,3 +1,4 @@
+
 package com.health.friday.health
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -20,7 +21,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-
 import androidx.health.connect.client.PermissionController
 import com.health.friday.device.HealthConnectRepository
 import com.health.friday.device.HealthSummary
@@ -29,7 +29,9 @@ import com.health.friday.ui.components.ScreenHeader
 import com.health.friday.ui.components.StatCard
 import com.health.friday.ui.theme.FridayBackground
 import com.health.friday.ui.theme.FridayBlue
+import com.health.friday.ui.theme.FridayCyan
 import com.health.friday.ui.theme.FridayGreen
+import com.health.friday.ui.theme.FridayOrange
 import com.health.friday.ui.theme.FridayRed
 import kotlinx.coroutines.launch
 
@@ -61,11 +63,6 @@ fun HealthScreen(
         mutableStateOf(true)
     }
 
-    /*
-     * Health Connect permission launcher.
-     *
-     * This opens the actual Health Connect permission screen.
-     */
     val permissionLauncher =
         rememberLauncherForActivityResult(
             contract =
@@ -82,10 +79,6 @@ fun HealthScreen(
             }
         }
 
-    /*
-     * Check Health Connect every time
-     * the Health screen opens.
-     */
     LaunchedEffect(Unit) {
 
         isAvailable =
@@ -215,12 +208,20 @@ fun HealthScreen(
         return
     }
 
-    /*
-     * Normal Health screen.
-     */
     val data =
         healthSummary
 
+    /*
+     * Normal Health screen.
+     *
+     * Existing real data:
+     * - Steps
+     * - Heart rate
+     * - Sleep
+     *
+     * Future wearable data is represented as unavailable
+     * until an actual provider supplies it.
+     */
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -244,6 +245,15 @@ fun HealthScreen(
                 title = "Health",
                 subtitle = "Body signals"
             )
+        }
+
+        // ---------------------------------------------------------
+        // ACTIVITY
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("ACTIVITY")
         }
 
         item {
@@ -272,6 +282,116 @@ fun HealthScreen(
                 )
 
                 StatCard(
+                    label = "DISTANCE",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayCyan,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "ACTIVE CALORIES",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayOrange,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "TOTAL CALORIES",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayOrange,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "FLOORS",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayGreen,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "ACTIVE TIME",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // HEART
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("HEART")
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
                     label = "HEART RATE",
 
                     value =
@@ -290,13 +410,111 @@ fun HealthScreen(
                     modifier =
                         Modifier.weight(1f)
                 )
+
+                StatCard(
+                    label = "RESTING HR",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
             }
         }
 
         item {
 
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "HRV",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "EXERCISE HR",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "HR ZONES",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "ARRHYTHMIA",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // SLEEP
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("SLEEP")
+        }
+
+        item {
+
             StatCard(
-                label = "SLEEP",
+                label = "TOTAL SLEEP",
 
                 value =
                     data?.let {
@@ -311,6 +529,341 @@ fun HealthScreen(
                     Modifier.fillMaxWidth()
             )
         }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "SLEEP STAGES",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "NAPS",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "SLEEP HR",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "SLEEP HRV",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // BLOOD & RESPIRATION
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("BLOOD & RESPIRATION")
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "SpO₂",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayCyan,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "BREATHING RATE",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayCyan,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // WORKOUT
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("WORKOUT")
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "WORKOUT",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayGreen,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "DURATION",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayGreen,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "WORKOUT CALORIES",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayOrange,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "WORKOUT DISTANCE",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayOrange,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "AVG HR",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayRed,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "PACE / SPEED",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayGreen,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "CADENCE",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayGreen,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "VO₂ MAX",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // WELLNESS
+        // ---------------------------------------------------------
+
+        item {
+
+            Text("WELLNESS")
+        }
+
+        item {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(12.dp)
+            ) {
+
+                StatCard(
+                    label = "STRESS",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayCyan,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+
+                StatCard(
+                    label = "BODY DATA",
+
+                    value = "—",
+
+                    detail = "Not available",
+
+                    accent = FridayBlue,
+
+                    modifier =
+                        Modifier.weight(1f)
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // CONNECTION
+        // ---------------------------------------------------------
 
         item {
 
@@ -339,3 +892,4 @@ private fun formatSleep(
 
     return "${hours}h ${remainingMinutes}m"
 }
+

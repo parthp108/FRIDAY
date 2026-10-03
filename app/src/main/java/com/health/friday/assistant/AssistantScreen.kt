@@ -23,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,16 +46,26 @@ import kotlinx.coroutines.launch
 @Composable
 fun AssistantScreen(
     orchestrator: AiOrchestrator,
+    initialMessages: List<AiMessage> = emptyList(),
+    onMessagesChanged: (List<AiMessage>) -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val messages = remember {
+    val messages = remember(initialMessages) {
         mutableStateListOf(
-            AiMessage(
-                role = "assistant",
-                content = "FRIDAY online. What do you need?"
-            )
+            *if (initialMessages.isNotEmpty()) {
+                initialMessages.toTypedArray()
+            } else {
+                arrayOf(
+                    AiMessage(
+                        role = "assistant",
+                        content = "FRIDAY online. What do you need?"
+                    )
+                )
+            }
         )
     }
+
 
     var input by remember {
         mutableStateOf("")
@@ -67,7 +78,14 @@ fun AssistantScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
+    LaunchedEffect(Unit) {
+        onMessagesChanged(messages.toList())
+    }
+
     LaunchedEffect(messages.size, isThinking) {
+
+        onMessagesChanged(messages.toList())
+
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
@@ -80,24 +98,22 @@ fun AssistantScreen(
             .navigationBarsPadding()
     ) {
 
-        // HEADER
-
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(
                     start = 20.dp,
-                    end = 20.dp,
+                    end = 12.dp,
                     top = 20.dp,
                     bottom = 12.dp
                 )
         ) {
 
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
-                // FRIDAY status orb
                 Box(
                     modifier = Modifier
                         .size(44.dp)
@@ -152,6 +168,15 @@ fun AssistantScreen(
                         )
                     }
                 }
+
+                TextButton(
+                    onClick = onOpenHistory
+                ) {
+                    Text(
+                        text = "History",
+                        color = Color(0xFF5CC8FF)
+                    )
+                }
             }
 
             Spacer(
@@ -164,8 +189,6 @@ fun AssistantScreen(
                 style = MaterialTheme.typography.bodyMedium
             )
         }
-
-        // CONVERSATION
 
         LazyColumn(
             state = listState,
@@ -194,8 +217,6 @@ fun AssistantScreen(
                 }
             }
         }
-
-        // INPUT AREA
 
         Column(
             modifier = Modifier
@@ -309,6 +330,8 @@ fun AssistantScreen(
             )
         }
     }
+
+
 }
 
 @Composable
@@ -316,6 +339,7 @@ private fun MessageBubble(
     message: AiMessage
 ) {
     val isUser = message.role == "user"
+
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -374,10 +398,13 @@ private fun MessageBubble(
             )
         }
     }
+
+
 }
 
 @Composable
 private fun ThinkingBubble() {
+
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -413,4 +440,6 @@ private fun ThinkingBubble() {
             )
         }
     }
+
+
 }

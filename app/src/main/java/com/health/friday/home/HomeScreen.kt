@@ -2,20 +2,32 @@ package com.health.friday.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.health.friday.data.local.TodoItem
 import com.health.friday.nutrition.NutritionGoals
 import com.health.friday.nutrition.NutritionRepository
 import com.health.friday.nutrition.WaterRepository
+import com.health.friday.tasks.TodoRepository
 import com.health.friday.ui.components.ScreenHeader
 import com.health.friday.ui.components.StatCard
 import com.health.friday.ui.theme.FridayBackground
@@ -26,6 +38,7 @@ import com.health.friday.ui.theme.FridayOrange
 import com.health.friday.ui.theme.FridayRed
 import com.health.friday.util.DayRange
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,6 +47,7 @@ import java.util.Locale
 fun HomeScreen(
     repository: NutritionRepository,
     waterRepository: WaterRepository,
+    todoRepository: TodoRepository,
     modifier: Modifier = Modifier
 ) {
 
@@ -45,15 +59,22 @@ fun HomeScreen(
         waterRepository.observeTodayEntries()
     }
 
+    val todosFlow = remember(todoRepository) {
+        todoRepository.getTodos()
+    }
+
     val dayStartFlow = remember {
         DayRange.todayFlow().map { it.first }
     }
 
     val meals by mealsFlow.collectAsState(initial = emptyList())
     val waterEntries by waterFlow.collectAsState(initial = emptyList())
+    val todos by todosFlow.collectAsState(initial = emptyList())
     val dayStart by dayStartFlow.collectAsState(
         initial = DayRange.today().first
     )
+
+    val pendingTodos = todos.filter { !it.isDone }
 
     val calories = meals.sumOf { it.calories }
     val waterMl = waterEntries.sumOf { it.amountMl }
@@ -64,6 +85,8 @@ fun HomeScreen(
             Locale.getDefault()
         ).format(Date(dayStart))
     }
+
+    val scope = rememberCoroutineScope()
 
     LazyColumn(
         modifier = modifier
@@ -85,6 +108,7 @@ fun HomeScreen(
             )
         }
 
+        // CALORIES + WATER
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -116,6 +140,7 @@ fun HomeScreen(
             }
         }
 
+        // STEPS + HEART
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -139,6 +164,7 @@ fun HomeScreen(
             }
         }
 
+        // GYM
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -152,14 +178,93 @@ fun HomeScreen(
                     modifier = Modifier.weight(1f)
                 )
 
-                StatCard(
-                    label = "TODO",
-                    value = "—",
-                    detail = "See Tasks tab",
-                    accent = FridayCyan,
+                Spacer(
                     modifier = Modifier.weight(1f)
                 )
             }
         }
+
+        // TODO SECTION
+        item {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "TODO",
+                    modifier = Modifier.padding(
+                        start = 4.dp,
+                        bottom = 8.dp
+                    )
+                )
+
+                if (pendingTodos.isNotEmpty()) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        pendingTodos.forEach { todo ->
+                            TodoRow(
+                                todo = todo,
+                                onChecked = {
+                                    scope.launch {
+                                        todoRepository.setDone(todo, true)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    Text(
+                        text = "No pending TODOs",
+                        modifier = Modifier.padding(
+                            start = 4.dp,
+                            top = 2.dp
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodoRow(
+    todo: TodoItem,
+    onChecked: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = FridayBlue.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(14.dp)
+            )
+            .padding(
+                horizontal = 10.dp,
+                vertical = 6.dp
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = todo.isDone,
+            onCheckedChange = {
+                if (it) {
+                    onChecked()
+                }
+            },
+            colors = CheckboxDefaults.colors(
+                checkedColor = FridayCyan
+            )
+        )
+
+        Spacer(
+            modifier = Modifier.height(1.dp)
+        )
+
+        Text(
+            text = todo.title,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 6.dp)
+        )
     }
 }
