@@ -31,7 +31,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,12 +40,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.material3.Button
 import com.health.friday.ai.AiMessage
 import com.health.friday.ai.AiOrchestrator
 import com.health.friday.ai.AiToolRegistry
 import com.health.friday.ai.GeminiAiClient
 import com.health.friday.ai.LocalAiClient
 import com.health.friday.ai.RoutingAiClient
+import com.health.friday.alarms.AlarmRepository
+import com.health.friday.alarms.AlarmScheduler
+import com.health.friday.alarms.AlarmTool
 import com.health.friday.assistant.AssistantScreen
 import com.health.friday.chat.ChatRepository
 import com.health.friday.data.local.ChatConversation
@@ -67,6 +71,9 @@ import com.health.friday.nutrition.LogWaterTool
 import com.health.friday.nutrition.NutritionRepository
 import com.health.friday.nutrition.NutritionScreen
 import com.health.friday.nutrition.WaterRepository
+import com.health.friday.reminders.ReminderRepository
+import com.health.friday.reminders.ReminderScheduler
+import com.health.friday.reminders.ReminderTool
 import com.health.friday.settings.SettingsRepository
 import com.health.friday.settings.SettingsScreen
 import com.health.friday.tasks.GoalRepository
@@ -88,20 +95,45 @@ import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
-    private val resumeCount = mutableIntStateOf(0)
+    private val resumeCount =
+        mutableIntStateOf(0)
 
     override fun onResume() {
         super.onResume()
-        resumeCount.intValue = resumeCount.intValue + 1
+
+        resumeCount.intValue =
+            resumeCount.intValue + 1
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+    override fun onCreate(
+        savedInstanceState: Bundle?
+    ) {
+        super.onCreate(
+            savedInstanceState
+        )
+
+        if (
+            android.os.Build.VERSION.SDK_INT >=
+            android.os.Build.VERSION_CODES.TIRAMISU &&
+            checkSelfPermission(
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                arrayOf(
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ),
+                1001
+            )
+        }
 
         enableEdgeToEdge()
 
         val database =
-            FridayDatabase.getDatabase(this)
+            FridayDatabase.getDatabase(
+                this
+            )
 
         val settingsRepository =
             SettingsRepository(this)
@@ -114,58 +146,127 @@ class MainActivity : ComponentActivity() {
 
         val nutritionRepository =
             NutritionRepository(
-                mealDao = database.mealDao(),
-                nutritionProvider = nutritionProvider,
-                healthConnectRepository = healthConnectRepository
+                mealDao =
+                    database.mealDao(),
+
+                nutritionProvider =
+                    nutritionProvider,
+
+                healthConnectRepository =
+                    healthConnectRepository
             )
 
         val waterRepository =
             WaterRepository(
-                waterDao = database.waterDao(),
-                healthConnectRepository = healthConnectRepository
+                waterDao =
+                    database.waterDao(),
+
+                healthConnectRepository =
+                    healthConnectRepository
             )
 
         val todoRepository =
             TodoRepository(
-                todoDao = database.todoDao()
+                todoDao =
+                    database.todoDao()
             )
 
         val goalRepository =
             GoalRepository(
-                goalDao = database.goalDao()
+                goalDao =
+                    database.goalDao()
             )
 
         val journalRepository =
             JournalRepository(
-                journalDao = database.journalDao()
+                journalDao =
+                    database.journalDao()
             )
 
         val chatRepository =
             ChatRepository(
-                conversationDao = database.chatConversationDao(),
-                messageDao = database.chatMessageDao()
+                conversationDao =
+                    database.chatConversationDao(),
+
+                messageDao =
+                    database.chatMessageDao()
             )
 
         val usageRepository =
             DeviceUsageRepository(this)
 
+        val reminderScheduler =
+            ReminderScheduler(this)
+
+        val reminderRepository =
+            ReminderRepository(
+                reminderDao =
+                    database.reminderDao(),
+
+                scheduler =
+                    reminderScheduler
+            )
+
+        val alarmScheduler =
+            AlarmScheduler(this)
+
+        val alarmRepository =
+            AlarmRepository(
+                alarmDao =
+                    database.alarmDao(),
+
+                scheduler =
+                    alarmScheduler
+            )
+
         val aiToolRegistry =
             AiToolRegistry(
-                tools = listOf(
-                    LogMealTool(nutritionRepository),
-                    LogEstimatedMealTool(nutritionRepository),
-                    LogWaterTool(waterRepository),
-                    GetTodayNutritionTool(
-                        repository = nutritionRepository,
-                        waterRepository = waterRepository
-                    ),
-                    GetWeekNutritionTool(
-                        repository = nutritionRepository,
-                        waterRepository = waterRepository
-                    ),
-                            TodoTool(todoRepository),
-                    GoalTool(goalRepository)
-                )
+                tools =
+                    listOf(
+                        LogMealTool(
+                            nutritionRepository
+                        ),
+
+                        LogEstimatedMealTool(
+                            nutritionRepository
+                        ),
+
+                        LogWaterTool(
+                            waterRepository
+                        ),
+
+                        GetTodayNutritionTool(
+                            repository =
+                                nutritionRepository,
+
+                            waterRepository =
+                                waterRepository
+                        ),
+
+                        GetWeekNutritionTool(
+                            repository =
+                                nutritionRepository,
+
+                            waterRepository =
+                                waterRepository
+                        ),
+
+                        TodoTool(
+                            todoRepository
+                        ),
+
+                        GoalTool(
+                            goalRepository
+                        ),
+
+                        ReminderTool(
+                            reminderRepository
+                        ),
+
+                        AlarmTool(
+                            alarmRepository
+                        )
+                    )
             )
 
         val localClient =
@@ -173,21 +274,32 @@ class MainActivity : ComponentActivity() {
 
         val geminiClient =
             GeminiAiClient(
-                settings = settingsRepository,
-                toolRegistry = aiToolRegistry
+                settings =
+                    settingsRepository,
+
+                toolRegistry =
+                    aiToolRegistry
             )
 
         val aiClient =
             RoutingAiClient(
-                settings = settingsRepository,
-                gemini = geminiClient,
-                local = localClient
+                settings =
+                    settingsRepository,
+
+                gemini =
+                    geminiClient,
+
+                local =
+                    localClient
             )
 
         val aiOrchestrator =
             AiOrchestrator(
-                aiClient = aiClient,
-                toolRegistry = aiToolRegistry
+                aiClient =
+                    aiClient,
+
+                toolRegistry =
+                    aiToolRegistry
             )
 
         setContent {
@@ -201,17 +313,38 @@ class MainActivity : ComponentActivity() {
                     resumeCount.intValue
 
                 FridayApp(
-                    nutritionRepository = nutritionRepository,
-                    waterRepository = waterRepository,
-                    healthConnectRepository = healthConnectRepository,
-                    todoRepository = todoRepository,
-                    goalRepository = goalRepository,
-                    journalRepository = journalRepository,
-                    chatRepository = chatRepository,
-                    usageRepository = usageRepository,
-                    settingsRepository = settingsRepository,
-                    usageRefreshKey = usageRefreshKey,
-                    aiOrchestrator = aiOrchestrator
+                    nutritionRepository =
+                        nutritionRepository,
+
+                    waterRepository =
+                        waterRepository,
+
+                    healthConnectRepository =
+                        healthConnectRepository,
+
+                    todoRepository =
+                        todoRepository,
+
+                    goalRepository =
+                        goalRepository,
+
+                    journalRepository =
+                        journalRepository,
+
+                    chatRepository =
+                        chatRepository,
+
+                    usageRepository =
+                        usageRepository,
+
+                    settingsRepository =
+                        settingsRepository,
+
+                    usageRefreshKey =
+                        usageRefreshKey,
+
+                    aiOrchestrator =
+                        aiOrchestrator
                 )
             }
         }
@@ -220,17 +353,38 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun FridayApp(
-    nutritionRepository: NutritionRepository,
-    waterRepository: WaterRepository,
-    healthConnectRepository: HealthConnectRepository,
-    todoRepository: TodoRepository,
-    goalRepository: GoalRepository,
-    journalRepository: JournalRepository,
-    chatRepository: ChatRepository,
-    usageRepository: DeviceUsageRepository,
-    settingsRepository: SettingsRepository,
-    usageRefreshKey: Int,
-    aiOrchestrator: AiOrchestrator
+    nutritionRepository:
+    NutritionRepository,
+
+    waterRepository:
+    WaterRepository,
+
+    healthConnectRepository:
+    HealthConnectRepository,
+
+    todoRepository:
+    TodoRepository,
+
+    goalRepository:
+    GoalRepository,
+
+    journalRepository:
+    JournalRepository,
+
+    chatRepository:
+    ChatRepository,
+
+    usageRepository:
+    DeviceUsageRepository,
+
+    settingsRepository:
+    SettingsRepository,
+
+    usageRefreshKey:
+    Int,
+
+    aiOrchestrator:
+    AiOrchestrator
 ) {
 
     var selectedScreen by remember {
@@ -254,27 +408,41 @@ fun FridayApp(
     }
 
     var assistantMessages by remember {
-        mutableStateOf<List<AiMessage>>(emptyList())
+        mutableStateOf<List<AiMessage>>(
+            emptyList()
+        )
     }
 
     var restoredMessages by remember {
-        mutableStateOf<List<AiMessage>>(emptyList())
+        mutableStateOf<List<AiMessage>>(
+            emptyList()
+        )
     }
 
-    // ID of the saved conversation currently being edited.
-    // null means this is a brand-new conversation.
     var activeConversationId by remember {
         mutableStateOf<Long?>(null)
     }
 
-    val scope = rememberCoroutineScope()
+    val scope =
+        rememberCoroutineScope()
 
     fun closeWithoutSaving() {
-        showSaveChatDialog = false
-        showAssistant = false
-        assistantMessages = emptyList()
-        restoredMessages = emptyList()
-        activeConversationId = null
+
+        showSaveChatDialog =
+            false
+
+        showAssistant =
+            false
+
+        assistantMessages =
+            emptyList()
+
+        restoredMessages =
+            emptyList()
+
+        activeConversationId =
+            null
+
         aiOrchestrator.clearConversation()
     }
 
@@ -287,8 +455,12 @@ fun FridayApp(
             }
 
         if (hasUserMessage) {
-            showSaveChatDialog = true
+
+            showSaveChatDialog =
+                true
+
         } else {
+
             closeWithoutSaving()
         }
     }
@@ -302,7 +474,8 @@ fun FridayApp(
             }
 
         val title =
-            userMessage?.content
+            userMessage
+                ?.content
                 ?.trim()
                 ?.let {
                     if (it.length > 50) {
@@ -315,6 +488,7 @@ fun FridayApp(
 
         val storedMessages =
             assistantMessages.map {
+
                 ChatMessage(
                     conversationId = 0,
                     role = it.role,
@@ -325,9 +499,14 @@ fun FridayApp(
         scope.launch {
 
             chatRepository.saveConversation(
-                title = title,
-                messages = storedMessages,
-                conversationId = activeConversationId
+                title =
+                    title,
+
+                messages =
+                    storedMessages,
+
+                conversationId =
+                    activeConversationId
             )
 
             closeWithoutSaving()
@@ -335,33 +514,48 @@ fun FridayApp(
     }
 
     fun openSavedConversation(
-        conversation: ChatConversation
+        conversation:
+        ChatConversation
     ) {
 
         scope.launch {
 
             val storedMessages =
                 chatRepository.getMessages(
-                    conversationId = conversation.id
+                    conversationId =
+                        conversation.id
                 )
 
             val messages =
                 storedMessages.map {
+
                     AiMessage(
-                        role = it.role,
-                        content = it.content
+                        role =
+                            it.role,
+
+                        content =
+                            it.content
                     )
                 }
 
-            aiOrchestrator.restoreConversation(messages)
+            aiOrchestrator.restoreConversation(
+                messages
+            )
 
-            restoredMessages = messages
-            assistantMessages = messages
+            restoredMessages =
+                messages
 
-            activeConversationId = conversation.id
+            assistantMessages =
+                messages
 
-            showHistory = false
-            showAssistant = true
+            activeConversationId =
+                conversation.id
+
+            showHistory =
+                false
+
+            showAssistant =
+                true
         }
     }
 
@@ -369,17 +563,24 @@ fun FridayApp(
 
         AlertDialog(
             onDismissRequest = {
-                showSaveChatDialog = false
+                showSaveChatDialog =
+                    false
             },
+
             title = {
-                Text("Save this conversation?")
+                Text(
+                    "Save this conversation?"
+                )
             },
+
             text = {
                 Text(
                     "You decide whether this FRIDAY conversation is saved."
                 )
             },
+
             confirmButton = {
+
                 TextButton(
                     onClick = {
                         saveAndCloseAssistant()
@@ -388,7 +589,9 @@ fun FridayApp(
                     Text("Save")
                 }
             },
+
             dismissButton = {
+
                 Row {
 
                     TextButton(
@@ -401,7 +604,8 @@ fun FridayApp(
 
                     TextButton(
                         onClick = {
-                            showSaveChatDialog = false
+                            showSaveChatDialog =
+                                false
                         }
                     ) {
                         Text("Cancel")
@@ -414,14 +618,19 @@ fun FridayApp(
     if (showHistory) {
 
         BackHandler {
-            showHistory = false
+            showHistory =
+                false
         }
 
         ChatHistoryScreen(
-            repository = chatRepository,
+            repository =
+                chatRepository,
+
             onBack = {
-                showHistory = false
+                showHistory =
+                    false
             },
+
             onOpenConversation = {
                 openSavedConversation(it)
             }
@@ -434,16 +643,25 @@ fun FridayApp(
         }
 
         Scaffold(
-            containerColor = FridayBackground,
-            contentColor = FridayText,
+            containerColor =
+                FridayBackground,
+
+            contentColor =
+                FridayText,
+
             topBar = {
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.End
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .statusBarsPadding()
+                            .padding(
+                                horizontal = 8.dp
+                            ),
+
+                    horizontalArrangement =
+                        Arrangement.End
                 ) {
 
                     TextButton(
@@ -451,70 +669,102 @@ fun FridayApp(
                             requestCloseAssistant()
                         }
                     ) {
+
                         Text(
                             text = "Close",
-                            color = FridayCyan
+                            color =
+                                FridayCyan
                         )
                     }
                 }
             }
+
         ) { innerPadding ->
 
             AssistantScreen(
-                orchestrator = aiOrchestrator,
-                initialMessages = restoredMessages,
+                orchestrator =
+                    aiOrchestrator,
+
+                initialMessages =
+                    restoredMessages,
+
                 onMessagesChanged = {
-                    assistantMessages = it
+                    assistantMessages =
+                        it
                 },
+
                 onOpenHistory = {
-                    showHistory = true
+                    showHistory =
+                        true
                 },
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .imePadding()
+
+                modifier =
+                    Modifier
+                        .padding(
+                            innerPadding
+                        )
+                        .imePadding()
             )
         }
 
     } else if (showJournal) {
 
         BackHandler {
-            showJournal = false
+            showJournal =
+                false
         }
 
         Scaffold(
-            containerColor = FridayBackground,
-            contentColor = FridayText
+            containerColor =
+                FridayBackground,
+
+            contentColor =
+                FridayText
+
         ) { innerPadding ->
 
             JournalScreen(
-                repository = journalRepository,
+                repository =
+                    journalRepository,
 
                 onBack = {
-                    showJournal = false
+                    showJournal =
+                        false
                 },
 
-                onSendWithFeedback = { entryText ->
+                onSendWithFeedback = {
+                        entryText ->
 
                     val entry =
-                        journalRepository.saveEntry(entryText)
+                        journalRepository.saveEntry(
+                            entryText
+                        )
                             ?: throw IllegalArgumentException(
                                 "Journal entry is empty"
                             )
 
                     val feedback =
-                        aiOrchestrator.generateJournalFeedback(
-                            journalText = entryText
-                        )
+                        aiOrchestrator
+                            .generateJournalFeedback(
+                                journalText =
+                                    entryText
+                            )
 
                     journalRepository.attachFeedback(
-                        entry = entry,
-                        feedback = feedback
+                        entry =
+                            entry,
+
+                        feedback =
+                            feedback
                     )
                 },
 
-                modifier = Modifier
-                    .padding(innerPadding)
-                    .imePadding()
+                modifier =
+                    Modifier
+                        .padding(
+                            innerPadding
+                        )
+                        .imePadding()
             )
         }
 
@@ -539,25 +789,44 @@ fun FridayApp(
             )
 
         Scaffold(
-            containerColor = FridayBackground,
-            contentColor = FridayText,
+            containerColor =
+                FridayBackground,
+
+            contentColor =
+                FridayText,
 
             floatingActionButton = {
 
                 ExtendedFloatingActionButton(
                     onClick = {
-                        restoredMessages = emptyList()
-                        assistantMessages = emptyList()
-                        activeConversationId = null
-                        aiOrchestrator.clearConversation()
-                        showAssistant = true
+
+                        restoredMessages =
+                            emptyList()
+
+                        assistantMessages =
+                            emptyList()
+
+                        activeConversationId =
+                            null
+
+                        aiOrchestrator
+                            .clearConversation()
+
+                        showAssistant =
+                            true
                     },
-                    containerColor = FridayCyan,
-                    contentColor = FridayBackground
+
+                    containerColor =
+                        FridayCyan,
+
+                    contentColor =
+                        FridayBackground
                 ) {
+
                     Text(
                         text = "FRIDAY",
-                        fontWeight = FontWeight.Bold
+                        fontWeight =
+                            FontWeight.Bold
                     )
                 }
             },
@@ -565,35 +834,55 @@ fun FridayApp(
             bottomBar = {
 
                 NavigationBar(
-                    containerColor = FridayCard
+                    containerColor =
+                        FridayCard
                 ) {
 
-                    screens.forEachIndexed { index, screen ->
+                    screens.forEachIndexed {
+                            index,
+                            screen ->
 
                         NavigationBarItem(
                             selected =
-                                selectedScreen == index,
+                                selectedScreen ==
+                                        index,
 
                             onClick = {
-                                selectedScreen = index
+                                selectedScreen =
+                                    index
                             },
 
                             icon = {
-                                Text(text = icons[index])
+                                Text(
+                                    text =
+                                        icons[index]
+                                )
                             },
 
                             label = {
-                                Text(screen)
+                                Text(
+                                    screen
+                                )
                             },
 
                             colors =
-                                NavigationBarItemDefaults.colors(
-                                    selectedIconColor = FridayCyan,
-                                    selectedTextColor = FridayCyan,
-                                    indicatorColor = FridayCardLight,
-                                    unselectedIconColor = FridayMuted,
-                                    unselectedTextColor = FridayMuted
-                                )
+                                NavigationBarItemDefaults
+                                    .colors(
+                                        selectedIconColor =
+                                            FridayCyan,
+
+                                        selectedTextColor =
+                                            FridayCyan,
+
+                                        indicatorColor =
+                                            FridayCardLight,
+
+                                        unselectedIconColor =
+                                            FridayMuted,
+
+                                        unselectedTextColor =
+                                            FridayMuted
+                                    )
                         )
                     }
                 }
@@ -603,38 +892,80 @@ fun FridayApp(
 
             when (selectedScreen) {
 
-                0 -> HomeScreen(
-                    repository = nutritionRepository,
-                    waterRepository = waterRepository,
-                    todoRepository = todoRepository,
-                    modifier = Modifier.padding(innerPadding)
-                )
+                0 ->
+                    HomeScreen(
+                        repository =
+                            nutritionRepository,
 
-                1 -> HealthScreen(
-                    modifier = Modifier.padding(innerPadding)
-                )
+                        waterRepository =
+                            waterRepository,
 
-                2 -> NutritionScreen(
-                    repository = nutritionRepository,
-                    waterRepository = waterRepository,
-                    modifier = Modifier.padding(innerPadding)
-                )
+                        todoRepository =
+                            todoRepository,
 
-                3 -> TasksScreen(
-                    todoRepository = todoRepository,
-                    goalRepository = goalRepository,
-                    usageRepository = usageRepository,
-                    usageRefreshKey = usageRefreshKey,
-                    onOpenJournal = {
-                        showJournal = true
-                    },
-                    modifier = Modifier.padding(innerPadding)
-                )
+                        modifier =
+                            Modifier.padding(
+                                innerPadding
+                            )
+                    )
 
-                else -> SettingsScreen(
-                    settings = settingsRepository,
-                    modifier = Modifier.padding(innerPadding)
-                )
+                1 ->
+                    HealthScreen(
+                        modifier =
+                            Modifier.padding(
+                                innerPadding
+                            )
+                    )
+
+                2 ->
+                    NutritionScreen(
+                        repository =
+                            nutritionRepository,
+
+                        waterRepository =
+                            waterRepository,
+
+                        modifier =
+                            Modifier.padding(
+                                innerPadding
+                            )
+                    )
+
+                3 ->
+                    TasksScreen(
+                        todoRepository =
+                            todoRepository,
+
+                        goalRepository =
+                            goalRepository,
+
+                        usageRepository =
+                            usageRepository,
+
+                        usageRefreshKey =
+                            usageRefreshKey,
+
+                        onOpenJournal = {
+                            showJournal =
+                                true
+                        },
+
+                        modifier =
+                            Modifier.padding(
+                                innerPadding
+                            )
+                    )
+
+                else ->
+                    SettingsScreen(
+                        settings =
+                            settingsRepository,
+
+                        modifier =
+                            Modifier.padding(
+                                innerPadding
+                            )
+                    )
             }
         }
     }
@@ -642,19 +973,29 @@ fun FridayApp(
 
 @Composable
 private fun ChatHistoryScreen(
-    repository: ChatRepository,
-    onBack: () -> Unit,
-    onOpenConversation: (ChatConversation) -> Unit
+    repository:
+    ChatRepository,
+
+    onBack:
+        () -> Unit,
+
+    onOpenConversation:
+        (ChatConversation) -> Unit
 ) {
 
-    val conversations by repository
+    val conversations by
+    repository
         .getConversations()
-        .collectAsState(initial = emptyList())
+        .collectAsState(
+            initial = emptyList()
+        )
 
-    val scope = rememberCoroutineScope()
+    val scope =
+        rememberCoroutineScope()
 
     val dateFormat =
         remember {
+
             SimpleDateFormat(
                 "dd MMM yyyy, HH:mm",
                 Locale.getDefault()
@@ -662,145 +1003,180 @@ private fun ChatHistoryScreen(
         }
 
     Scaffold(
-        containerColor = FridayBackground,
-        contentColor = FridayText
+        containerColor =
+            FridayBackground,
+
+        contentColor =
+            FridayText
+
     ) { innerPadding ->
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(FridayBackground)
-                .padding(innerPadding)
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        FridayBackground
+                    )
+                    .padding(
+                        innerPadding
+                    )
         ) {
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(
-                        start = 8.dp,
-                        end = 16.dp,
-                        top = 8.dp,
-                        bottom = 8.dp
-                    ),
-                verticalAlignment = Alignment.CenterVertically
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(
+                            start = 8.dp,
+                            end = 16.dp,
+                            top = 8.dp,
+                            bottom = 8.dp
+                        ),
+
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
 
                 TextButton(
-                    onClick = onBack
+                    onClick =
+                        onBack
                 ) {
+
                     Text(
-                        text = "‹ Back",
-                        color = FridayCyan
+                        text = "Back",
+                        color =
+                            FridayCyan
                     )
                 }
 
                 Text(
                     text = "Chat History",
-                    color = FridayText,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 8.dp)
+                    color =
+                        FridayText,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    modifier =
+                        Modifier.padding(
+                            start = 8.dp
+                        )
                 )
             }
 
             if (conversations.isEmpty()) {
 
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                Text(
+                    text =
+                        "No saved conversations.",
 
-                    Text(
-                        text = "No saved conversations.",
-                        color = FridayMuted
-                    )
-                }
+                    color =
+                        FridayMuted,
+
+                    modifier =
+                        Modifier.padding(
+                            20.dp
+                        )
+                )
 
             } else {
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(
-                        start = 16.dp,
-                        top = 12.dp,
-                        end = 16.dp,
-                        bottom = 32.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier =
+                        Modifier.fillMaxSize(),
+
+                    contentPadding =
+                        PaddingValues(
+                            16.dp
+                        ),
+
+                    verticalArrangement =
+                        Arrangement.spacedBy(
+                            10.dp
+                        )
                 ) {
 
                     items(
-                        items = conversations,
-                        key = { it.id }
+                        conversations,
+                        key = {
+                            it.id
+                        }
                     ) { conversation ->
 
                         Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = FridayCard
-                            )
+                            modifier =
+                                Modifier.fillMaxWidth(),
+
+                            colors =
+                                CardDefaults
+                                    .cardColors(
+                                        containerColor =
+                                            FridayCard
+                                    ),
+
+                            onClick = {
+                                onOpenConversation(
+                                    conversation
+                                )
+                            }
                         ) {
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        start = 16.dp,
-                                        top = 12.dp,
-                                        end = 8.dp,
-                                        bottom = 12.dp
-                                    ),
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier =
+                                    Modifier.padding(
+                                        16.dp
+                                    )
                             ) {
 
-                                Column(
-                                    modifier = Modifier.weight(1f)
-                                ) {
+                                Text(
+                                    text =
+                                        conversation.title,
 
-                                    Text(
-                                        text = conversation.title,
-                                        color = FridayText,
-                                        fontWeight = FontWeight.Medium
-                                    )
+                                    color =
+                                        FridayText,
 
-                                    Text(
-                                        text = dateFormat.format(
-                                            Date(conversation.updatedAt)
+                                    fontWeight =
+                                        FontWeight.SemiBold
+                                )
+
+                                Text(
+                                    text =
+                                        dateFormat.format(
+                                            Date(
+                                                conversation.updatedAt
+                                            )
                                         ),
-                                        color = FridayMuted,
-                                        modifier = Modifier.padding(
-                                            top = 4.dp
-                                        )
-                                    )
-                                }
 
-                                TextButton(
-                                    onClick = {
-                                        onOpenConversation(conversation)
-                                    }
-                                ) {
-                                    Text(
-                                        text = "Open",
-                                        color = FridayCyan
-                                    )
-                                }
+                                    color =
+                                        FridayMuted,
+
+                                    modifier =
+                                        Modifier.padding(
+                                            top = 5.dp
+                                        )
+                                )
 
                                 TextButton(
                                     onClick = {
 
                                         scope.launch {
-                                            repository.deleteConversation(
-                                                conversation
-                                            )
+
+                                            repository
+                                                .deleteConversation(
+                                                    conversation
+                                                )
                                         }
                                     }
                                 ) {
+
                                     Text(
-                                        text = "Delete",
-                                        color = FridayMuted
+                                        text =
+                                            "Delete",
+
+                                        color =
+                                            FridayMuted
                                     )
                                 }
                             }
@@ -811,4 +1187,3 @@ private fun ChatHistoryScreen(
         }
     }
 }
-

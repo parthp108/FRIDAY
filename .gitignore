@@ -1,15 +1,41 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local Android Studio configuration
+.idea/
 *.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
-.externalNativeBuild
-.cxx
+
+# Local SDK configuration
 local.properties
+
+# Generated / machine-specific files
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Kotlin / Java generated files
+*.class
+
+# Signing / secrets
+*.jks
+*.keystore
+keystore.properties
+
+# Environment / secret files
+.env
+.env.*
+secrets.properties
+
+# Google / Firebase service account files
+google-services.json
+*.p12
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.log
+*.tmp
