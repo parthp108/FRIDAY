@@ -4,7 +4,6 @@ package com.health.friday.health
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,7 +38,6 @@ import kotlinx.coroutines.launch
 fun HealthScreen(
     modifier: Modifier = Modifier
 ) {
-
     val context =
         androidx.compose.ui.platform.LocalContext.current
 
@@ -51,16 +49,29 @@ fun HealthScreen(
     val coroutineScope =
         rememberCoroutineScope()
 
+    /*
+     * null  = still checking Health Connect
+     * true  = permissions are already granted
+     * false = permissions are actually missing
+     *
+     * Starting with null prevents the "Connect Health" screen
+     * from flashing every time this screen is opened.
+     */
     var hasAccess by remember {
-        mutableStateOf(false)
+        mutableStateOf<Boolean?>(null)
     }
 
     var healthSummary by remember {
         mutableStateOf<HealthSummary?>(null)
     }
 
+    /*
+     * null  = still checking availability
+     * true  = Health Connect available
+     * false = Health Connect unavailable
+     */
     var isAvailable by remember {
-        mutableStateOf(true)
+        mutableStateOf<Boolean?>(null)
     }
 
     val permissionLauncher =
@@ -70,9 +81,14 @@ fun HealthScreen(
                     .createRequestPermissionResultContract()
         ) {
             coroutineScope.launch {
-                hasAccess = repository.hasAccess()
 
-                if (hasAccess) {
+                val access =
+                    repository.hasAccess()
+
+                hasAccess =
+                    access
+
+                if (access) {
                     healthSummary =
                         repository.getTodayHealth()
                 }
@@ -81,38 +97,91 @@ fun HealthScreen(
 
     LaunchedEffect(Unit) {
 
-        isAvailable =
+        val available =
             repository.isAvailable()
 
-        if (!isAvailable) {
+        isAvailable =
+            available
+
+        if (!available) {
+            hasAccess = false
             return@LaunchedEffect
         }
 
-        hasAccess =
+        val access =
             repository.hasAccess()
 
-        if (!hasAccess) {
+        hasAccess =
+            access
+
+        if (access) {
+
+            healthSummary =
+                repository.getTodayHealth()
+
+        } else {
 
             permissionLauncher.launch(
                 repository.requiredPermissions
             )
-
-        } else {
-
-            healthSummary =
-                repository.getTodayHealth()
         }
     }
 
     /*
-     * Health Connect unavailable.
+     * ---------------------------------------------------------
+     * INITIAL CHECK
+     * ---------------------------------------------------------
+     *
+     * Do not show the permission screen while we are still
+     * checking the existing Health Connect permission.
+     *
+     * This is the part that removes the visible blink.
      */
-    if (!isAvailable) {
+    if (
+        isAvailable == null ||
+        hasAccess == null
+    ) {
+        LazyColumn(
+            modifier =
+                modifier
+                    .fillMaxSize()
+                    .background(
+                        FridayBackground
+                    ),
+
+            contentPadding =
+                PaddingValues(
+                    start = 18.dp,
+                    top = 18.dp,
+                    end = 18.dp,
+                    bottom = 96.dp
+                )
+        ) {
+            item {
+                ScreenHeader(
+                    title = "Health",
+                    subtitle = "Body signals"
+                )
+            }
+        }
+
+        return
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * HEALTH CONNECT UNAVAILABLE
+     * ---------------------------------------------------------
+     */
+    if (!isAvailable!!) {
 
         LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .background(FridayBackground),
+            modifier =
+                modifier
+                    .fillMaxSize()
+                    .background(
+                        FridayBackground
+                    ),
 
             contentPadding =
                 PaddingValues(
@@ -138,8 +207,12 @@ fun HealthScreen(
 
                 InfoCard(
                     title = "Health Connect unavailable",
-                    body = "Health Connect is not currently available on this device.",
-                    accent = FridayBlue
+
+                    body =
+                        "Health Connect is not currently available on this device.",
+
+                    accent =
+                        FridayBlue
                 )
             }
         }
@@ -148,14 +221,22 @@ fun HealthScreen(
     }
 
     /*
-     * Permission not granted.
+     * ---------------------------------------------------------
+     * PERMISSION NOT GRANTED
+     * ---------------------------------------------------------
+     *
+     * This branch is reached only after we have actually checked
+     * Health Connect and confirmed that permission is missing.
      */
-    if (!hasAccess) {
+    if (!hasAccess!!) {
 
         LazyColumn(
-            modifier = modifier
-                .fillMaxSize()
-                .background(FridayBackground),
+            modifier =
+                modifier
+                    .fillMaxSize()
+                    .background(
+                        FridayBackground
+                    ),
 
             contentPadding =
                 PaddingValues(
@@ -181,8 +262,12 @@ fun HealthScreen(
 
                 InfoCard(
                     title = "Health Connect",
-                    body = "FRIDAY needs permission to read your steps, heart rate and sleep data.",
-                    accent = FridayBlue
+
+                    body =
+                        "FRIDAY needs permission to read your steps, heart rate and sleep data.",
+
+                    accent =
+                        FridayBlue
                 )
             }
 
@@ -200,7 +285,9 @@ fun HealthScreen(
                         Modifier.fillMaxWidth()
                 ) {
 
-                    Text("Connect Health")
+                    Text(
+                        "Connect Health"
+                    )
                 }
             }
         }
@@ -212,20 +299,26 @@ fun HealthScreen(
         healthSummary
 
     /*
-     * Normal Health screen.
+     * ---------------------------------------------------------
+     * NORMAL HEALTH SCREEN
+     * ---------------------------------------------------------
      *
      * Existing real data:
      * - Steps
      * - Heart rate
      * - Sleep
      *
-     * Future wearable data is represented as unavailable
-     * until an actual provider supplies it.
+     * Future wearable data remains unavailable until an actual
+     * provider supplies it.
      */
+
     LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(FridayBackground),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(
+                    FridayBackground
+                ),
 
         contentPadding =
             PaddingValues(
@@ -253,7 +346,9 @@ fun HealthScreen(
 
         item {
 
-            Text("ACTIVITY")
+            Text(
+                "ACTIVITY"
+            )
         }
 
         item {
@@ -273,9 +368,11 @@ fun HealthScreen(
                         data?.steps?.toString()
                             ?: "—",
 
-                    detail = "Today",
+                    detail =
+                        "Today",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -284,11 +381,14 @@ fun HealthScreen(
                 StatCard(
                     label = "DISTANCE",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayCyan,
+                    accent =
+                        FridayCyan,
 
                     modifier =
                         Modifier.weight(1f)
@@ -309,11 +409,14 @@ fun HealthScreen(
                 StatCard(
                     label = "ACTIVE CALORIES",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayOrange,
+                    accent =
+                        FridayOrange,
 
                     modifier =
                         Modifier.weight(1f)
@@ -322,11 +425,14 @@ fun HealthScreen(
                 StatCard(
                     label = "TOTAL CALORIES",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayOrange,
+                    accent =
+                        FridayOrange,
 
                     modifier =
                         Modifier.weight(1f)
@@ -347,11 +453,14 @@ fun HealthScreen(
                 StatCard(
                     label = "FLOORS",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -360,11 +469,14 @@ fun HealthScreen(
                 StatCard(
                     label = "ACTIVE TIME",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -378,7 +490,9 @@ fun HealthScreen(
 
         item {
 
-            Text("HEART")
+            Text(
+                "HEART"
+            )
         }
 
         item {
@@ -405,7 +519,8 @@ fun HealthScreen(
                         else
                             "No data",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -414,11 +529,14 @@ fun HealthScreen(
                 StatCard(
                     label = "RESTING HR",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -439,11 +557,14 @@ fun HealthScreen(
                 StatCard(
                     label = "HRV",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -452,11 +573,14 @@ fun HealthScreen(
                 StatCard(
                     label = "EXERCISE HR",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -477,11 +601,14 @@ fun HealthScreen(
                 StatCard(
                     label = "HR ZONES",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -490,11 +617,14 @@ fun HealthScreen(
                 StatCard(
                     label = "ARRHYTHMIA",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -508,7 +638,9 @@ fun HealthScreen(
 
         item {
 
-            Text("SLEEP")
+            Text(
+                "SLEEP"
+            )
         }
 
         item {
@@ -518,12 +650,16 @@ fun HealthScreen(
 
                 value =
                     data?.let {
-                        formatSleep(it.sleepMinutes)
+                        formatSleep(
+                            it.sleepMinutes
+                        )
                     } ?: "—",
 
-                detail = "Today",
+                detail =
+                    "Today",
 
-                accent = FridayBlue,
+                accent =
+                    FridayBlue,
 
                 modifier =
                     Modifier.fillMaxWidth()
@@ -543,11 +679,14 @@ fun HealthScreen(
                 StatCard(
                     label = "SLEEP STAGES",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -556,11 +695,14 @@ fun HealthScreen(
                 StatCard(
                     label = "NAPS",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -581,11 +723,14 @@ fun HealthScreen(
                 StatCard(
                     label = "SLEEP HR",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -594,11 +739,14 @@ fun HealthScreen(
                 StatCard(
                     label = "SLEEP HRV",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -612,7 +760,9 @@ fun HealthScreen(
 
         item {
 
-            Text("BLOOD & RESPIRATION")
+            Text(
+                "BLOOD & RESPIRATION"
+            )
         }
 
         item {
@@ -628,11 +778,14 @@ fun HealthScreen(
                 StatCard(
                     label = "SpO₂",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayCyan,
+                    accent =
+                        FridayCyan,
 
                     modifier =
                         Modifier.weight(1f)
@@ -641,11 +794,14 @@ fun HealthScreen(
                 StatCard(
                     label = "BREATHING RATE",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayCyan,
+                    accent =
+                        FridayCyan,
 
                     modifier =
                         Modifier.weight(1f)
@@ -659,7 +815,9 @@ fun HealthScreen(
 
         item {
 
-            Text("WORKOUT")
+            Text(
+                "WORKOUT"
+            )
         }
 
         item {
@@ -675,11 +833,14 @@ fun HealthScreen(
                 StatCard(
                     label = "WORKOUT",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -688,11 +849,14 @@ fun HealthScreen(
                 StatCard(
                     label = "DURATION",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -713,11 +877,14 @@ fun HealthScreen(
                 StatCard(
                     label = "WORKOUT CALORIES",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayOrange,
+                    accent =
+                        FridayOrange,
 
                     modifier =
                         Modifier.weight(1f)
@@ -726,11 +893,14 @@ fun HealthScreen(
                 StatCard(
                     label = "WORKOUT DISTANCE",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayOrange,
+                    accent =
+                        FridayOrange,
 
                     modifier =
                         Modifier.weight(1f)
@@ -751,11 +921,14 @@ fun HealthScreen(
                 StatCard(
                     label = "AVG HR",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayRed,
+                    accent =
+                        FridayRed,
 
                     modifier =
                         Modifier.weight(1f)
@@ -764,11 +937,14 @@ fun HealthScreen(
                 StatCard(
                     label = "PACE / SPEED",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -789,11 +965,14 @@ fun HealthScreen(
                 StatCard(
                     label = "CADENCE",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayGreen,
+                    accent =
+                        FridayGreen,
 
                     modifier =
                         Modifier.weight(1f)
@@ -802,11 +981,14 @@ fun HealthScreen(
                 StatCard(
                     label = "VO₂ MAX",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -820,7 +1002,9 @@ fun HealthScreen(
 
         item {
 
-            Text("WELLNESS")
+            Text(
+                "WELLNESS"
+            )
         }
 
         item {
@@ -836,11 +1020,14 @@ fun HealthScreen(
                 StatCard(
                     label = "STRESS",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayCyan,
+                    accent =
+                        FridayCyan,
 
                     modifier =
                         Modifier.weight(1f)
@@ -849,11 +1036,14 @@ fun HealthScreen(
                 StatCard(
                     label = "BODY DATA",
 
-                    value = "—",
+                    value =
+                        "—",
 
-                    detail = "Not available",
+                    detail =
+                        "Not available",
 
-                    accent = FridayBlue,
+                    accent =
+                        FridayBlue,
 
                     modifier =
                         Modifier.weight(1f)
@@ -868,9 +1058,14 @@ fun HealthScreen(
         item {
 
             InfoCard(
-                title = "Health Connect",
-                body = "FRIDAY is connected to Health Connect and reading your available health data.",
-                accent = FridayGreen
+                title =
+                    "Health Connect",
+
+                body =
+                    "FRIDAY is connected to Health Connect and reading your available health data.",
+
+                accent =
+                    FridayGreen
             )
         }
     }
