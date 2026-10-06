@@ -10,33 +10,12 @@ class AlarmScheduler(
     private val context: Context
 ) {
 
-    /*
-     * FRIDAY now delegates normal alarms to the phone's
-     * Clock application.
-     *
-     * The rest of FRIDAY still talks to AlarmScheduler,
-     * so the alarm domain does not need to know which
-     * execution backend is being used.
-     */
-
     fun canScheduleExactAlarms(): Boolean {
-        /*
-         * The phone Clock app owns the actual alarm.
-         *
-         * FRIDAY no longer needs its own exact-alarm scheduling
-         * for normal Clock-app alarms.
-         */
         return true
     }
 
     fun openExactAlarmSettings() {
-        /*
-         * Kept for compatibility with the existing repository.
-         *
-         * The phone Clock app is now responsible for alarm
-         * scheduling, so FRIDAY does not need to open its own
-         * exact-alarm settings.
-         */
+        // The phone Clock app handles its own alarm permission/settings.
     }
 
     fun scheduleAlarm(
@@ -58,7 +37,7 @@ class AlarmScheduler(
         val minute =
             target.get(Calendar.MINUTE)
 
-        val intent =
+        val clockIntent =
             Intent(
                 AlarmClock.ACTION_SET_ALARM
             ).apply {
@@ -84,7 +63,6 @@ class AlarmScheduler(
                 )
 
                 if (repeatDaily) {
-
                     putExtra(
                         AlarmClock.EXTRA_DAYS,
                         arrayListOf(
@@ -98,30 +76,66 @@ class AlarmScheduler(
                         )
                     )
                 }
+
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK
+                )
             }
 
         return try {
 
             if (
-                intent.resolveActivity(
+                clockIntent.resolveActivity(
                     context.packageManager
                 ) == null
             ) {
-                false
-            } else {
-
-                intent.addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                )
-
-                context.startActivity(intent)
-
-                true
+                return false
             }
 
-        } catch (_: Exception) {
+            context.startActivity(clockIntent)
 
+            /*
+             * Give the Clock app a moment to process the
+             * ACTION_SET_ALARM request, then bring FRIDAY
+             * back to the foreground.
+             *
+             * This does not control the Clock app's window.
+             * It simply attempts to return the user to FRIDAY.
+             */
+            android.os.Handler(
+                context.mainLooper
+            ).postDelayed(
+                {
+                    bringFridayToForeground()
+                },
+                300L
+            )
+
+            true
+
+        } catch (_: Exception) {
             false
+        }
+    }
+
+    private fun bringFridayToForeground() {
+
+        val intent =
+            context.packageManager
+                .getLaunchIntentForPackage(
+                    context.packageName
+                )
+                ?: return
+
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+        )
+
+        try {
+            context.startActivity(intent)
+        } catch (_: Exception) {
         }
     }
 
@@ -130,12 +144,9 @@ class AlarmScheduler(
         requestCode: Int = alarmId.toInt()
     ) {
         /*
-         * Android's public AlarmClock intent API does not provide
-         * a reliable generic delete operation for an alarm created
-         * by another Clock application.
-         *
-         * FRIDAY can still delete/disable its own database record,
-         * but it does not pretend that this removes the Clock alarm.
+         * The Android public AlarmClock API does not provide
+         * a generic way for FRIDAY to delete an alarm that
+         * was created inside the manufacturer's Clock app.
          */
     }
 
