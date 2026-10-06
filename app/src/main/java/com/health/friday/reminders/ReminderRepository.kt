@@ -1,3 +1,4 @@
+
 package com.health.friday.reminders
 
 import com.health.friday.data.local.Reminder
@@ -9,7 +10,6 @@ class ReminderRepository(
     private val reminderDao: ReminderDao,
     private val scheduler: ReminderScheduler
 ) {
-
 
     fun getReminders(): Flow<List<Reminder>> {
         return reminderDao.getAll()
@@ -41,10 +41,14 @@ class ReminderRepository(
             )
 
         val id =
-            reminderDao.insert(reminder)
+            reminderDao.insert(
+                reminder
+            )
 
         val savedReminder =
-            reminder.copy(id = id)
+            reminder.copy(
+                id = id
+            )
 
         if (!scheduler.canScheduleExactAlarms()) {
 
@@ -63,11 +67,20 @@ class ReminderRepository(
 
         val scheduled =
             scheduler.scheduleReminder(
-                reminderId = savedReminder.id,
-                title = savedReminder.title,
-                message = savedReminder.title,
-                triggerAtMillis = savedReminder.timeMillis,
-                repeatDaily = savedReminder.repeatDaily
+                reminderId =
+                    savedReminder.id,
+
+                title =
+                    savedReminder.title,
+
+                message =
+                    savedReminder.title,
+
+                triggerAtMillis =
+                    savedReminder.timeMillis,
+
+                repeatDaily =
+                    savedReminder.repeatDaily
             )
 
         if (!scheduled) {
@@ -91,17 +104,28 @@ class ReminderRepository(
     ): Boolean {
 
         if (!scheduler.canScheduleExactAlarms()) {
+
             scheduler.openExactAlarmSettings()
+
             return false
         }
 
         val scheduled =
             scheduler.scheduleReminder(
-                reminderId = reminder.id,
-                title = reminder.title,
-                message = reminder.title,
-                triggerAtMillis = reminder.timeMillis,
-                repeatDaily = reminder.repeatDaily
+                reminderId =
+                    reminder.id,
+
+                title =
+                    reminder.title,
+
+                message =
+                    reminder.title,
+
+                triggerAtMillis =
+                    reminder.timeMillis,
+
+                repeatDaily =
+                    reminder.repeatDaily
             )
 
         if (!scheduled) {
@@ -145,5 +169,19 @@ class ReminderRepository(
         )
     }
 
+    /*
+     * Called after a one-time reminder fires.
+     *
+     * We disable it rather than deleting it so the reminder
+     * remains visible in FRIDAY's Tasks screen as completed/expired.
+     */
+    suspend fun completeOneTimeReminder(
+        reminderId: Long
+    ) {
 
+        reminderDao.disable(
+            reminderId
+        )
+    }
 }
+

@@ -42,9 +42,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.health.friday.data.local.FridayDatabase
 import com.health.friday.data.local.Goal
+import com.health.friday.data.local.Reminder
 import com.health.friday.device.DeviceUsageRepository
 import com.health.friday.device.PhoneUsageCard
+import com.health.friday.reminders.ReminderRepository
+import com.health.friday.reminders.ReminderScheduler
 import com.health.friday.ui.components.ScreenHeader
 import com.health.friday.ui.theme.FridayBackground
 import com.health.friday.ui.theme.FridayCard
@@ -68,18 +72,62 @@ fun TasksScreen(
     onOpenJournal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val scope = rememberCoroutineScope()
+    val context =
+        androidx.compose.ui.platform.LocalContext.current
 
-    val todosFlow = remember(todoRepository) {
-        todoRepository.getTodos()
-    }
+    val scope =
+        rememberCoroutineScope()
 
-    val goalsFlow = remember(goalRepository) {
-        goalRepository.getGoals()
-    }
+    /*
+     * The reminder system uses the same Room database as
+     * the rest of FRIDAY. No second database is created.
+     */
+    val reminderRepository =
+        remember(context) {
 
-    val todos by todosFlow.collectAsState(initial = emptyList())
-    val goals by goalsFlow.collectAsState(initial = emptyList())
+            val database =
+                FridayDatabase.getDatabase(
+                    context
+                )
+
+            ReminderRepository(
+                reminderDao =
+                    database.reminderDao(),
+
+                scheduler =
+                    ReminderScheduler(context)
+            )
+        }
+
+    val todosFlow =
+        remember(todoRepository) {
+            todoRepository.getTodos()
+        }
+
+    val goalsFlow =
+        remember(goalRepository) {
+            goalRepository.getGoals()
+        }
+
+    val remindersFlow =
+        remember(reminderRepository) {
+            reminderRepository.getReminders()
+        }
+
+    val todos by
+    todosFlow.collectAsState(
+        initial = emptyList()
+    )
+
+    val goals by
+    goalsFlow.collectAsState(
+        initial = emptyList()
+    )
+
+    val reminders by
+    remindersFlow.collectAsState(
+        initial = emptyList()
+    )
 
     var todoInput by remember {
         mutableStateOf("")
@@ -97,36 +145,52 @@ fun TasksScreen(
         modifier = modifier
             .fillMaxSize()
             .background(FridayBackground),
-        contentPadding = PaddingValues(
-            start = 18.dp,
-            top = 18.dp,
-            end = 18.dp,
-            bottom = 96.dp
-        ),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+
+        contentPadding =
+            PaddingValues(
+                start = 18.dp,
+                top = 18.dp,
+                end = 18.dp,
+                bottom = 96.dp
+            ),
+
+        verticalArrangement =
+            Arrangement.spacedBy(14.dp)
     ) {
 
-        // ---------- HEADER ----------
+        // ---------------------------------------------------------
+        // HEADER
+        // ---------------------------------------------------------
 
         item {
+
             ScreenHeader(
                 title = "Tasks",
                 subtitle = "Your day, your list, your head"
             )
         }
 
-        // ---------- DEVICE USAGE ----------
+        // ---------------------------------------------------------
+        // DEVICE USAGE
+        // ---------------------------------------------------------
 
         item {
+
             PhoneUsageCard(
-                repository = usageRepository,
-                refreshKey = usageRefreshKey
+                repository =
+                    usageRepository,
+
+                refreshKey =
+                    usageRefreshKey
             )
         }
 
-        // ---------- TODO ----------
+        // ---------------------------------------------------------
+        // TODO
+        // ---------------------------------------------------------
 
         item {
+
             SectionLabel(
                 title = "TODO",
                 count = todos.size
@@ -134,53 +198,157 @@ fun TasksScreen(
         }
 
         item {
+
             AddRow(
                 placeholder = "What needs to be done?",
-                value = todoInput,
+
+                value =
+                    todoInput,
+
                 onValueChange = {
                     todoInput = it
                 },
+
                 onAdd = {
-                    val title = todoInput
+
+                    val title =
+                        todoInput
+
                     todoInput = ""
 
                     scope.launch {
-                        todoRepository.addTodo(title)
+
+                        todoRepository.addTodo(
+                            title
+                        )
                     }
                 }
             )
         }
 
         if (todos.isEmpty()) {
+
             item {
-                EmptyHint("No tasks yet. Add something to get started.")
+
+                EmptyHint(
+                    "No tasks yet. Add something to get started."
+                )
             }
         }
 
         items(
             items = todos,
-            key = { "todo-${it.id}" }
+            key = {
+                "todo-${it.id}"
+            }
         ) { todo ->
 
             CheckRow(
-                title = todo.title,
-                done = todo.isDone,
+                title =
+                    todo.title,
+
+                done =
+                    todo.isDone,
+
                 onToggle = { checked ->
+
                     scope.launch {
-                        todoRepository.setDone(todo, checked)
+
+                        todoRepository.setDone(
+                            todo,
+                            checked
+                        )
                     }
                 },
+
                 onDelete = {
+
                     scope.launch {
-                        todoRepository.deleteTodo(todo)
+
+                        todoRepository.deleteTodo(
+                            todo
+                        )
                     }
                 }
             )
         }
 
-        // ---------- GOALS ----------
+        // ---------------------------------------------------------
+        // REMINDERS
+        // ---------------------------------------------------------
 
         item {
+
+            SectionLabel(
+                title = "REMINDERS",
+                subtitle = "NOTIFICATIONS",
+                count = reminders.size
+            )
+        }
+
+        if (reminders.isEmpty()) {
+
+            item {
+
+                EmptyHint(
+                    "No reminders yet. Tell FRIDAY something like \"remind me to drink water in 30 minutes\"."
+                )
+            }
+
+        } else {
+
+            items(
+                items = reminders,
+                key = {
+                    "reminder-${it.id}"
+                }
+            ) { reminder ->
+
+                ReminderRow(
+                    reminder =
+                        reminder,
+
+                    onToggle = { enabled ->
+
+                        scope.launch {
+
+                            if (enabled) {
+
+                                reminderRepository
+                                    .enableReminder(
+                                        reminder
+                                    )
+
+                            } else {
+
+                                reminderRepository
+                                    .disableReminder(
+                                        reminder
+                                    )
+                            }
+                        }
+                    },
+
+                    onDelete = {
+
+                        scope.launch {
+
+                            reminderRepository
+                                .deleteReminder(
+                                    reminder
+                                )
+                        }
+                    }
+                )
+            }
+        }
+
+        // ---------------------------------------------------------
+        // GOALS
+        // ---------------------------------------------------------
+
+        item {
+
             SectionLabel(
                 title = "GOALS",
                 subtitle = "LONGER TERM",
@@ -189,29 +357,45 @@ fun TasksScreen(
         }
 
         item {
+
             GoalAddArea(
-                goalInput = goalInput,
+                goalInput =
+                    goalInput,
+
                 onGoalInputChange = {
                     goalInput = it
                 },
-                selectedDate = selectedGoalDate,
+
+                selectedDate =
+                    selectedGoalDate,
+
                 onDateSelected = {
                     selectedGoalDate = it
                 },
+
                 onClearDate = {
                     selectedGoalDate = null
                 },
+
                 onAdd = {
-                    val title = goalInput
-                    val targetDate = selectedGoalDate
+
+                    val title =
+                        goalInput
+
+                    val targetDate =
+                        selectedGoalDate
 
                     goalInput = ""
                     selectedGoalDate = null
 
                     scope.launch {
+
                         goalRepository.addGoal(
-                            title = title,
-                            targetDate = targetDate
+                            title =
+                                title,
+
+                            targetDate =
+                                targetDate
                         )
                     }
                 }
@@ -219,42 +403,65 @@ fun TasksScreen(
         }
 
         if (goals.isEmpty()) {
+
             item {
-                EmptyHint("No goals yet. Define something worth pursuing.")
+
+                EmptyHint(
+                    "No goals yet. Define something worth pursuing."
+                )
             }
         }
 
         items(
             items = goals,
-            key = { "goal-${it.id}" }
+            key = {
+                "goal-${it.id}"
+            }
         ) { goal ->
 
             GoalRow(
-                goal = goal,
+                goal =
+                    goal,
+
                 onToggle = { checked ->
+
                     scope.launch {
-                        goalRepository.setDone(goal, checked)
+
+                        goalRepository.setDone(
+                            goal,
+                            checked
+                        )
                     }
                 },
+
                 onDelete = {
+
                     scope.launch {
-                        goalRepository.deleteGoal(goal)
+
+                        goalRepository.deleteGoal(
+                            goal
+                        )
                     }
                 }
             )
         }
 
-        // ---------- JOURNAL ----------
+        // ---------------------------------------------------------
+        // JOURNAL
+        // ---------------------------------------------------------
 
         item {
+
             SectionLabel(
                 title = "JOURNAL"
             )
         }
 
         item {
+
             JournalCard(
-                onClick = onOpenJournal
+                onClick =
+                    onOpenJournal
             )
         }
     }
@@ -273,47 +480,86 @@ private fun SectionLabel(
                 top = 10.dp,
                 bottom = 2.dp
             ),
-        verticalAlignment = Alignment.CenterVertically
+
+        verticalAlignment =
+            Alignment.CenterVertically
     ) {
 
         Column(
-            modifier = Modifier.weight(1f)
+            modifier =
+                Modifier.weight(1f)
         ) {
+
             Text(
-                text = title,
-                color = FridayText,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
+                text =
+                    title,
+
+                color =
+                    FridayText,
+
+                fontSize =
+                    13.sp,
+
+                fontWeight =
+                    FontWeight.Bold,
+
+                letterSpacing =
+                    1.2.sp
             )
 
             if (subtitle != null) {
+
                 Text(
-                    text = subtitle,
-                    color = FridayMuted,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = 0.8.sp,
-                    modifier = Modifier.padding(top = 2.dp)
+                    text =
+                        subtitle,
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        11.sp,
+
+                    fontWeight =
+                        FontWeight.Medium,
+
+                    letterSpacing =
+                        0.8.sp,
+
+                    modifier =
+                        Modifier.padding(
+                            top = 2.dp
+                        )
                 )
             }
         }
 
         if (count != null) {
+
             Text(
-                text = count.toString(),
-                color = FridayCyan,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(
-                        FridayCyan.copy(alpha = 0.12f)
-                    )
-                    .padding(
-                        horizontal = 9.dp,
-                        vertical = 5.dp
-                    )
+                text =
+                    count.toString(),
+
+                color =
+                    FridayCyan,
+
+                fontSize =
+                    12.sp,
+
+                fontWeight =
+                    FontWeight.Bold,
+
+                modifier =
+                    Modifier
+                        .clip(CircleShape)
+                        .background(
+                            FridayCyan.copy(
+                                alpha = 0.12f
+                            )
+                        )
+                        .padding(
+                            horizontal = 9.dp,
+                            vertical = 5.dp
+                        )
             )
         }
     }
@@ -324,20 +570,36 @@ private fun EmptyHint(
     text: String
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FridayCard.copy(alpha = 0.55f)
-        )
-    ) {
-        Text(
-            text = text,
-            color = FridayMuted,
-            fontSize = 13.sp,
-            modifier = Modifier.padding(
-                horizontal = 16.dp,
-                vertical = 15.dp
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(16.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    FridayCard.copy(
+                        alpha = 0.55f
+                    )
             )
+    ) {
+
+        Text(
+            text =
+                text,
+
+            color =
+                FridayMuted,
+
+            fontSize =
+                13.sp,
+
+            modifier =
+                Modifier.padding(
+                    horizontal = 16.dp,
+                    vertical = 15.dp
+                )
         )
     }
 }
@@ -350,56 +612,345 @@ private fun AddRow(
     onAdd: () -> Unit
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        horizontalArrangement =
+            Arrangement.spacedBy(9.dp),
+
+        verticalAlignment =
+            Alignment.CenterVertically
     ) {
 
         OutlinedTextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
+            value =
+                value,
+
+            onValueChange =
+                onValueChange,
+
+            modifier =
+                Modifier.weight(1f),
+
             placeholder = {
+
                 Text(
-                    text = placeholder,
-                    color = FridayMuted,
-                    fontSize = 14.sp
+                    text =
+                        placeholder,
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        14.sp
                 )
             },
-            singleLine = true,
-            shape = RoundedCornerShape(16.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = FridayCyan,
-                unfocusedBorderColor = FridayMuted.copy(alpha = 0.35f),
-                focusedTextColor = FridayText,
-                unfocusedTextColor = FridayText,
-                cursorColor = FridayCyan
-            )
+
+            singleLine =
+                true,
+
+            shape =
+                RoundedCornerShape(16.dp),
+
+            colors =
+                OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor =
+                        FridayCyan,
+
+                    unfocusedBorderColor =
+                        FridayMuted.copy(
+                            alpha = 0.35f
+                        ),
+
+                    focusedTextColor =
+                        FridayText,
+
+                    unfocusedTextColor =
+                        FridayText,
+
+                    cursorColor =
+                        FridayCyan
+                )
         )
 
         Button(
-            onClick = onAdd,
-            enabled = value.isNotBlank(),
-            modifier = Modifier.height(56.dp),
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(
-                horizontal = 18.dp
-            ),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = FridayCyan,
-                contentColor = FridayBackground,
-                disabledContainerColor = FridayCard,
-                disabledContentColor = FridayMuted
-            )
+            onClick =
+                onAdd,
+
+            enabled =
+                value.isNotBlank(),
+
+            modifier =
+                Modifier.height(56.dp),
+
+            shape =
+                RoundedCornerShape(16.dp),
+
+            contentPadding =
+                PaddingValues(
+                    horizontal = 18.dp
+                ),
+
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor =
+                        FridayCyan,
+
+                    contentColor =
+                        FridayBackground,
+
+                    disabledContainerColor =
+                        FridayCard,
+
+                    disabledContentColor =
+                        FridayMuted
+                )
         ) {
+
             Text(
-                text = "ADD",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.8.sp
+                text =
+                    "ADD",
+
+                fontSize =
+                    12.sp,
+
+                fontWeight =
+                    FontWeight.Bold,
+
+                letterSpacing =
+                    0.8.sp
             )
         }
     }
+}
+
+@Composable
+private fun ReminderRow(
+    reminder: Reminder,
+    onToggle: (Boolean) -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(16.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    FridayCard
+            )
+    ) {
+
+        Column(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 16.dp,
+                        top = 14.dp,
+                        end = 8.dp,
+                        bottom = 12.dp
+                    )
+        ) {
+
+            Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                verticalAlignment =
+                    Alignment.CenterVertically
+            ) {
+
+                Column(
+                    modifier =
+                        Modifier.weight(1f)
+                ) {
+
+                    Text(
+                        text =
+                            reminder.title,
+
+                        color =
+                            if (reminder.enabled) {
+                                FridayText
+                            } else {
+                                FridayMuted
+                            },
+
+                        fontSize =
+                            15.sp,
+
+                        fontWeight =
+                            FontWeight.Medium
+                    )
+
+                    Text(
+                        text =
+                            formatReminderTime(
+                                reminder.timeMillis
+                            ),
+
+                        color =
+                            if (reminder.enabled) {
+                                FridayCyan
+                            } else {
+                                FridayMuted
+                            },
+
+                        fontSize =
+                            12.sp,
+
+                        modifier =
+                            Modifier.padding(
+                                top = 4.dp
+                            )
+                    )
+                }
+
+                TextButton(
+                    onClick = {
+                        onToggle(
+                            !reminder.enabled
+                        )
+                    },
+
+                    contentPadding =
+                        PaddingValues(
+                            horizontal = 8.dp
+                        )
+                ) {
+
+                    Text(
+                        text =
+                            if (reminder.enabled) {
+                                "ON"
+                            } else {
+                                "OFF"
+                            },
+
+                        color =
+                            if (reminder.enabled) {
+                                FridayGreen
+                            } else {
+                                FridayMuted
+                            },
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
+
+                TextButton(
+                    onClick =
+                        onDelete,
+
+                    contentPadding =
+                        PaddingValues(
+                            horizontal = 8.dp
+                        )
+                ) {
+
+                    Text(
+                        text =
+                            "×",
+
+                        color =
+                            FridayMuted,
+
+                        fontSize =
+                            20.sp,
+
+                        fontWeight =
+                            FontWeight.Light
+                    )
+                }
+            }
+
+            Row(
+                modifier =
+                    Modifier.padding(
+                        top = 7.dp
+                    ),
+
+                horizontalArrangement =
+                    Arrangement.spacedBy(8.dp)
+            ) {
+
+                Text(
+                    text =
+                        if (reminder.repeatDaily) {
+                            "DAILY"
+                        } else {
+                            "ONCE"
+                        },
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        9.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    letterSpacing =
+                        1.sp
+                )
+
+                Text(
+                    text =
+                        "•",
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        9.sp
+                )
+
+                Text(
+                    text =
+                        if (reminder.enabled) {
+                            "ENABLED"
+                        } else {
+                            "DISABLED"
+                        },
+
+                    color =
+                        if (reminder.enabled) {
+                            FridayGreen
+                        } else {
+                            FridayMuted
+                        },
+
+                    fontSize =
+                        9.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    letterSpacing =
+                        1.sp
+                )
+            }
+        }
+    }
+}
+
+private fun formatReminderTime(
+    millis: Long
+): String {
+
+    return SimpleDateFormat(
+        "dd MMM, HH:mm",
+        Locale.getDefault()
+    ).format(millis)
 }
 
 @Composable
@@ -412,20 +963,33 @@ private fun GoalAddArea(
     onAdd: () -> Unit
 ) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        verticalArrangement =
+            Arrangement.spacedBy(10.dp)
     ) {
 
         AddRow(
-            placeholder = "What are you working toward?",
-            value = goalInput,
-            onValueChange = onGoalInputChange,
-            onAdd = onAdd
+            placeholder =
+                "What are you working toward?",
+
+            value =
+                goalInput,
+
+            onValueChange =
+                onGoalInputChange,
+
+            onAdd =
+                onAdd
         )
 
         GoalDateButton(
-            selectedDate = selectedDate,
-            onDateSelected = onDateSelected,
-            onClearDate = onClearDate
+            selectedDate =
+                selectedDate,
+
+            onDateSelected =
+                onDateSelected,
+
+            onClearDate =
+                onClearDate
         )
     }
 }
@@ -436,102 +1000,163 @@ private fun GoalDateButton(
     onDateSelected: (Long) -> Unit,
     onClearDate: () -> Unit
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-
-    val calendar = remember {
-        Calendar.getInstance()
-    }
+    val context =
+        androidx.compose.ui.platform.LocalContext.current
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        horizontalArrangement =
+            Arrangement.spacedBy(8.dp),
+
+        verticalAlignment =
+            Alignment.CenterVertically
     ) {
 
         Button(
             onClick = {
-                val current = Calendar.getInstance()
+
+                val current =
+                    Calendar.getInstance()
 
                 DatePickerDialog(
                     context,
+
                     { _, year, month, dayOfMonth ->
 
-                        val selected = Calendar.getInstance().apply {
-                            set(
-                                year,
-                                month,
-                                dayOfMonth,
-                                0,
-                                0,
-                                0
-                            )
-                            set(Calendar.MILLISECOND, 0)
-                        }
+                        val selected =
+                            Calendar.getInstance().apply {
+
+                                set(
+                                    year,
+                                    month,
+                                    dayOfMonth,
+                                    0,
+                                    0,
+                                    0
+                                )
+
+                                set(
+                                    Calendar.MILLISECOND,
+                                    0
+                                )
+                            }
 
                         onDateSelected(
                             selected.timeInMillis
                         )
                     },
-                    current.get(Calendar.YEAR),
-                    current.get(Calendar.MONTH),
-                    current.get(Calendar.DAY_OF_MONTH)
+
+                    current.get(
+                        Calendar.YEAR
+                    ),
+
+                    current.get(
+                        Calendar.MONTH
+                    ),
+
+                    current.get(
+                        Calendar.DAY_OF_MONTH
+                    )
                 ).show()
             },
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(15.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = FridayCard,
-                contentColor = FridayText
-            ),
-            contentPadding = PaddingValues(
-                horizontal = 15.dp,
-                vertical = 13.dp
-            )
+
+            modifier =
+                Modifier.weight(1f),
+
+            shape =
+                RoundedCornerShape(15.dp),
+
+            colors =
+                ButtonDefaults.buttonColors(
+                    containerColor =
+                        FridayCard,
+
+                    contentColor =
+                        FridayText
+                ),
+
+            contentPadding =
+                PaddingValues(
+                    horizontal = 15.dp,
+                    vertical = 13.dp
+                )
         ) {
+
             Column(
-                modifier = Modifier.fillMaxWidth()
+                modifier =
+                    Modifier.fillMaxWidth()
             ) {
 
                 Text(
-                    text = if (selectedDate == null) {
-                        "TARGET DATE"
-                    } else {
-                        "TARGET DATE"
-                    },
-                    color = FridayMuted,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    text =
+                        "TARGET DATE",
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        9.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    letterSpacing =
+                        1.sp
                 )
 
                 Text(
-                    text = selectedDate?.let {
-                        formatGoalDate(it)
-                    } ?: "Set a date",
-                    color = if (selectedDate == null) {
-                        FridayMuted
-                    } else {
-                        FridayCyan
-                    },
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 3.dp)
+                    text =
+                        selectedDate?.let {
+                            formatGoalDate(it)
+                        } ?: "Set a date",
+
+                    color =
+                        if (selectedDate == null) {
+                            FridayMuted
+                        } else {
+                            FridayCyan
+                        },
+
+                    fontSize =
+                        14.sp,
+
+                    fontWeight =
+                        FontWeight.SemiBold,
+
+                    modifier =
+                        Modifier.padding(
+                            top = 3.dp
+                        )
                 )
             }
         }
 
         if (selectedDate != null) {
+
             TextButton(
-                onClick = onClearDate,
-                contentPadding = PaddingValues(
-                    horizontal = 8.dp
-                )
+                onClick =
+                    onClearDate,
+
+                contentPadding =
+                    PaddingValues(
+                        horizontal = 8.dp
+                    )
             ) {
+
                 Text(
-                    text = "CLEAR",
-                    color = FridayMuted,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold
+                    text =
+                        "CLEAR",
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        10.sp,
+
+                    fontWeight =
+                        FontWeight.Bold
                 )
             }
         }
@@ -544,82 +1169,130 @@ private fun GoalRow(
     onToggle: (Boolean) -> Unit,
     onDelete: () -> Unit
 ) {
-    val status = goal.targetDate?.let {
-        goalDateStatus(
-            targetDate = it,
-            isDone = goal.isDone
-        )
-    }
+    val status =
+        goal.targetDate?.let {
+            goalDateStatus(
+                targetDate =
+                    it,
+
+                isDone =
+                    goal.isDone
+            )
+        }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FridayCard
-        )
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(18.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    FridayCard
+            )
     ) {
 
         Column(
-            modifier = Modifier.fillMaxWidth()
+            modifier =
+                Modifier.fillMaxWidth()
         ) {
 
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = 7.dp,
-                        end = 6.dp,
-                        top = 6.dp,
-                        bottom = 4.dp
-                    ),
-                verticalAlignment = Alignment.CenterVertically
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            start = 7.dp,
+                            end = 6.dp,
+                            top = 6.dp,
+                            bottom = 4.dp
+                        ),
+
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
 
                 Checkbox(
-                    checked = goal.isDone,
-                    onCheckedChange = onToggle,
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = FridayGreen,
-                        uncheckedColor = FridayMuted,
-                        checkmarkColor = FridayBackground
-                    )
-                )
+                    checked =
+                        goal.isDone,
 
-                Text(
-                    text = goal.title,
-                    color = if (goal.isDone) {
-                        FridayMuted
-                    } else {
-                        FridayText
-                    },
-                    fontSize = 15.sp,
-                    fontWeight = if (goal.isDone) {
-                        FontWeight.Normal
-                    } else {
-                        FontWeight.Medium
-                    },
-                    textDecoration = if (goal.isDone) {
-                        TextDecoration.LineThrough
-                    } else {
-                        null
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(
-                            start = 4.dp,
-                            end = 6.dp
+                    onCheckedChange =
+                        onToggle,
+
+                    colors =
+                        CheckboxDefaults.colors(
+                            checkedColor =
+                                FridayGreen,
+
+                            uncheckedColor =
+                                FridayMuted,
+
+                            checkmarkColor =
+                                FridayBackground
                         )
                 )
 
+                Text(
+                    text =
+                        goal.title,
+
+                    color =
+                        if (goal.isDone) {
+                            FridayMuted
+                        } else {
+                            FridayText
+                        },
+
+                    fontSize =
+                        15.sp,
+
+                    fontWeight =
+                        if (goal.isDone) {
+                            FontWeight.Normal
+                        } else {
+                            FontWeight.Medium
+                        },
+
+                    textDecoration =
+                        if (goal.isDone) {
+                            TextDecoration.LineThrough
+                        } else {
+                            null
+                        },
+
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .padding(
+                                start = 4.dp,
+                                end = 6.dp
+                            )
+                )
+
                 TextButton(
-                    onClick = onDelete,
-                    contentPadding = PaddingValues(8.dp)
+                    onClick =
+                        onDelete,
+
+                    contentPadding =
+                        PaddingValues(
+                            8.dp
+                        )
                 ) {
+
                     Text(
-                        text = "×",
-                        color = FridayMuted,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Light
+                        text =
+                            "×",
+
+                        color =
+                            FridayMuted,
+
+                        fontSize =
+                            20.sp,
+
+                        fontWeight =
+                            FontWeight.Light
                     )
                 }
             }
@@ -627,47 +1300,78 @@ private fun GoalRow(
             if (goal.targetDate != null) {
 
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            start = 52.dp,
-                            end = 18.dp,
-                            bottom = 14.dp
-                        ),
-                    verticalAlignment = Alignment.CenterVertically
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                start = 52.dp,
+                                end = 18.dp,
+                                bottom = 14.dp
+                            ),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
                 ) {
 
                     Column(
-                        modifier = Modifier.weight(1f)
+                        modifier =
+                            Modifier.weight(1f)
                     ) {
 
                         Text(
-                            text = "TARGET",
-                            color = FridayMuted,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
+                            text =
+                                "TARGET",
+
+                            color =
+                                FridayMuted,
+
+                            fontSize =
+                                9.sp,
+
+                            fontWeight =
+                                FontWeight.Bold,
+
+                            letterSpacing =
+                                1.sp
                         )
 
                         Text(
-                            text = formatGoalDate(
-                                goal.targetDate
-                            ),
-                            color = FridayText,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(top = 2.dp)
+                            text =
+                                formatGoalDate(
+                                    goal.targetDate
+                                ),
+
+                            color =
+                                FridayText,
+
+                            fontSize =
+                                12.sp,
+
+                            fontWeight =
+                                FontWeight.Medium,
+
+                            modifier =
+                                Modifier.padding(
+                                    top = 2.dp
+                                )
                         )
                     }
 
                     Text(
-                        text = status ?: "",
-                        color = goalStatusColor(
-                            goal.targetDate,
-                            goal.isDone
-                        ),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        text =
+                            status ?: "",
+
+                        color =
+                            goalStatusColor(
+                                goal.targetDate,
+                                goal.isDone
+                            ),
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.Bold
                     )
                 }
             }
@@ -683,70 +1387,113 @@ private fun CheckRow(
     onDelete: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FridayCard
-        )
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(16.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    FridayCard
+            )
     ) {
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    start = 7.dp,
-                    end = 6.dp,
-                    top = 6.dp,
-                    bottom = 6.dp
-                ),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        start = 7.dp,
+                        end = 6.dp,
+                        top = 6.dp,
+                        bottom = 6.dp
+                    ),
+
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
 
             Checkbox(
-                checked = done,
-                onCheckedChange = onToggle,
-                colors = CheckboxDefaults.colors(
-                    checkedColor = FridayGreen,
-                    uncheckedColor = FridayMuted,
-                    checkmarkColor = FridayBackground
-                )
-            )
+                checked =
+                    done,
 
-            Text(
-                text = title,
-                color = if (done) {
-                    FridayMuted
-                } else {
-                    FridayText
-                },
-                fontSize = 15.sp,
-                fontWeight = if (done) {
-                    FontWeight.Normal
-                } else {
-                    FontWeight.Medium
-                },
-                textDecoration = if (done) {
-                    TextDecoration.LineThrough
-                } else {
-                    null
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(
-                        start = 4.dp,
-                        end = 6.dp
+                onCheckedChange =
+                    onToggle,
+
+                colors =
+                    CheckboxDefaults.colors(
+                        checkedColor =
+                            FridayGreen,
+
+                        uncheckedColor =
+                            FridayMuted,
+
+                        checkmarkColor =
+                            FridayBackground
                     )
             )
 
+            Text(
+                text =
+                    title,
+
+                color =
+                    if (done) {
+                        FridayMuted
+                    } else {
+                        FridayText
+                    },
+
+                fontSize =
+                    15.sp,
+
+                fontWeight =
+                    if (done) {
+                        FontWeight.Normal
+                    } else {
+                        FontWeight.Medium
+                    },
+
+                textDecoration =
+                    if (done) {
+                        TextDecoration.LineThrough
+                    } else {
+                        null
+                    },
+
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .padding(
+                            start = 4.dp,
+                            end = 6.dp
+                        )
+            )
+
             TextButton(
-                onClick = onDelete,
-                contentPadding = PaddingValues(8.dp)
+                onClick =
+                    onDelete,
+
+                contentPadding =
+                    PaddingValues(
+                        8.dp
+                    )
             ) {
+
                 Text(
-                    text = "×",
-                    color = FridayMuted,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Light
+                    text =
+                        "×",
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        20.sp,
+
+                    fontWeight =
+                        FontWeight.Light
                 )
             }
         }
@@ -758,46 +1505,80 @@ private fun JournalCard(
     onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = FridayCard
-        )
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    onClick =
+                        onClick
+                ),
+
+        shape =
+            RoundedCornerShape(18.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    FridayCard
+            )
     ) {
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(17.dp),
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(17.dp),
+
+            verticalAlignment =
+                Alignment.CenterVertically
         ) {
 
             Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
+                modifier =
+                    Modifier.weight(1f),
+
+                verticalArrangement =
+                    Arrangement.spacedBy(5.dp)
             ) {
 
                 Text(
-                    text = "Journal",
-                    color = FridayText,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    text =
+                        "Journal",
+
+                    color =
+                        FridayText,
+
+                    fontSize =
+                        16.sp,
+
+                    fontWeight =
+                        FontWeight.Bold
                 )
 
                 Text(
-                    text = "Write it out and keep your entries.",
-                    color = FridayMuted,
-                    fontSize = 13.sp
+                    text =
+                        "Write it out and keep your entries.",
+
+                    color =
+                        FridayMuted,
+
+                    fontSize =
+                        13.sp
                 )
             }
 
             Text(
-                text = "›",
-                color = FridayOrange,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Light
+                text =
+                    "›",
+
+                color =
+                    FridayOrange,
+
+                fontSize =
+                    28.sp,
+
+                fontWeight =
+                    FontWeight.Light
             )
         }
     }
@@ -806,6 +1587,7 @@ private fun JournalCard(
 private fun formatGoalDate(
     millis: Long
 ): String {
+
     return SimpleDateFormat(
         "dd MMM yyyy",
         Locale.getDefault()
@@ -815,28 +1597,51 @@ private fun formatGoalDate(
 private fun startOfDay(
     millis: Long
 ): Calendar {
+
     return Calendar.getInstance().apply {
-        timeInMillis = millis
-        set(Calendar.HOUR_OF_DAY, 0)
-        set(Calendar.MINUTE, 0)
-        set(Calendar.SECOND, 0)
-        set(Calendar.MILLISECOND, 0)
+
+        timeInMillis =
+            millis
+
+        set(
+            Calendar.HOUR_OF_DAY,
+            0
+        )
+
+        set(
+            Calendar.MINUTE,
+            0
+        )
+
+        set(
+            Calendar.SECOND,
+            0
+        )
+
+        set(
+            Calendar.MILLISECOND,
+            0
+        )
     }
 }
 
 private fun daysUntil(
     targetDate: Long
 ): Long {
-    val today = startOfDay(
-        System.currentTimeMillis()
-    )
 
-    val target = startOfDay(
-        targetDate
-    )
+    val today =
+        startOfDay(
+            System.currentTimeMillis()
+        )
+
+    val target =
+        startOfDay(
+            targetDate
+        )
 
     return TimeUnit.MILLISECONDS.toDays(
-        target.timeInMillis - today.timeInMillis
+        target.timeInMillis -
+                today.timeInMillis
     )
 }
 
@@ -849,14 +1654,27 @@ private fun goalDateStatus(
         return "COMPLETED"
     }
 
-    val days = daysUntil(targetDate)
+    val days =
+        daysUntil(
+            targetDate
+        )
 
     return when {
-        days > 1L -> "$days days remaining"
-        days == 1L -> "Tomorrow"
-        days == 0L -> "Due today"
-        days == -1L -> "1 day overdue"
-        else -> "${-days} days overdue"
+
+        days > 1L ->
+            "$days days remaining"
+
+        days == 1L ->
+            "Tomorrow"
+
+        days == 0L ->
+            "Due today"
+
+        days == -1L ->
+            "1 day overdue"
+
+        else ->
+            "${-days} days overdue"
     }
 }
 
@@ -864,9 +1682,17 @@ private fun goalStatusColor(
     targetDate: Long,
     isDone: Boolean
 ) = when {
-    isDone -> FridayGreen
-    daysUntil(targetDate) < 0L -> FridayOrange
-    daysUntil(targetDate) <= 3L -> FridayOrange
-    else -> FridayCyan
+
+    isDone ->
+        FridayGreen
+
+    daysUntil(targetDate) < 0L ->
+        FridayOrange
+
+    daysUntil(targetDate) <= 3L ->
+        FridayOrange
+
+    else ->
+        FridayCyan
 }
 
