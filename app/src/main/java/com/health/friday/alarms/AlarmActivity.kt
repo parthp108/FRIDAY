@@ -57,9 +57,7 @@ class AlarmActivity : ComponentActivity() {
 
         makeAlarmScreenVisible()
 
-        /*
-         * Back must not dismiss the alarm.
-         */
+
         onBackPressedDispatcher.addCallback(
             this,
             object : OnBackPressedCallback(true) {

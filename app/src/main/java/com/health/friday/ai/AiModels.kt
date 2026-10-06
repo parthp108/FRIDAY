@@ -1,8 +1,10 @@
+
 package com.health.friday.ai
 
 data class AiMessage(
     val role: String,
-    val content: String
+    val content: String,
+    val createdAt: Long = System.currentTimeMillis()
 )
 
 data class AiContext(
@@ -19,3 +21,4 @@ data class AiToolCall(
     val name: String,
     val arguments: Map<String, String> = emptyMap()
 )
+

@@ -58,9 +58,8 @@ private val alarmWord =
 
 private val alarmTime =
     Regex(
-        "\\bat\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?\\b"
+        "\\b(?:at|for)\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?\\b"
     )
-
 private val relativeAlarm =
     Regex(
         "\\b(?:in|after|for)\\s+" +
@@ -325,11 +324,44 @@ class LocalAiClient : AiClient {
                 return null
             }
 
+            /*
+             * Minute/hour alarms ignore the current seconds.
+             *
+             * Example:
+             * 12:25:26 + 1 minute -> 12:26:00
+             * 12:25:59 + 1 minute -> 12:26:00
+             *
+             * Second-based alarms still use the exact current time.
+             */
             timeMillis =
-                now
-                    .plusNanos(delayMillis * 1_000_000L)
-                    .toInstant()
-                    .toEpochMilli()
+                if (
+                    unit.startsWith("minute") ||
+                    unit.startsWith("min") ||
+                    unit.startsWith("hour") ||
+                    unit.startsWith("hr")
+                ) {
+
+                    val baseTime =
+                        now
+                            .withSecond(0)
+                            .withNano(0)
+
+                    baseTime
+                        .plusNanos(
+                            delayMillis * 1_000_000L
+                        )
+                        .toInstant()
+                        .toEpochMilli()
+
+                } else {
+
+                    now
+                        .plusNanos(
+                            delayMillis * 1_000_000L
+                        )
+                        .toInstant()
+                        .toEpochMilli()
+                }
 
         } else {
 
@@ -605,3 +637,4 @@ class LocalAiClient : AiClient {
         }
     }
 }
+

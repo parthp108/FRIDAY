@@ -1,3 +1,4 @@
+
 package com.health.friday.assistant
 
 import androidx.compose.foundation.background
@@ -42,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import com.health.friday.ai.AiMessage
 import com.health.friday.ai.AiOrchestrator
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun AssistantScreen(
@@ -65,7 +69,6 @@ fun AssistantScreen(
             }
         )
     }
-
 
     var input by remember {
         mutableStateOf("")
@@ -330,8 +333,6 @@ fun AssistantScreen(
             )
         }
     }
-
-
 }
 
 @Composable
@@ -340,6 +341,13 @@ private fun MessageBubble(
 ) {
     val isUser = message.role == "user"
 
+    val timeFormat =
+        remember {
+            SimpleDateFormat(
+                "h:mm a",
+                Locale.getDefault()
+            )
+        }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -396,15 +404,24 @@ private fun MessageBubble(
                 color = Color(0xFFE9EDF2),
                 style = MaterialTheme.typography.bodyLarge
             )
+
+            Spacer(
+                modifier = Modifier.height(5.dp)
+            )
+
+            Text(
+                text = timeFormat.format(
+                    Date(message.createdAt)
+                ),
+                color = Color(0xFF697483),
+                style = MaterialTheme.typography.labelSmall
+            )
         }
     }
-
-
 }
 
 @Composable
 private fun ThinkingBubble() {
-
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -440,6 +457,5 @@ private fun ThinkingBubble() {
             )
         }
     }
-
-
 }
+

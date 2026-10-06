@@ -1,3 +1,4 @@
+
 package com.health.friday.settings
 
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -28,6 +30,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import com.health.friday.alarms.AlarmRepository
 import com.health.friday.ui.components.InfoCard
 import com.health.friday.ui.components.ScreenHeader
 import com.health.friday.ui.theme.FridayBackground
@@ -37,10 +41,15 @@ import com.health.friday.ui.theme.FridayCyan
 import com.health.friday.ui.theme.FridayGreen
 import com.health.friday.ui.theme.FridayMuted
 import com.health.friday.ui.theme.FridayOrange
+import com.health.friday.ui.theme.FridayText
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
     settings: SettingsRepository,
+    alarmRepository: AlarmRepository,
     modifier: Modifier = Modifier
 ) {
 
@@ -59,6 +68,27 @@ fun SettingsScreen(
     var modelInput by remember {
         mutableStateOf(settings.getModel())
     }
+
+    val alarms by
+    alarmRepository
+        .getAlarms()
+        .collectAsState(initial = emptyList())
+
+    val timeFormat =
+        remember {
+            SimpleDateFormat(
+                "h:mm a",
+                Locale.getDefault()
+            )
+        }
+
+    val dateTimeFormat =
+        remember {
+            SimpleDateFormat(
+                "dd MMM yyyy, h:mm a",
+                Locale.getDefault()
+            )
+        }
 
     LazyColumn(
         modifier = modifier
@@ -113,7 +143,11 @@ fun SettingsScreen(
                                         "Model: $savedModel"
                             },
                         color =
-                            if (savedKey.isEmpty()) FridayOrange else FridayGreen,
+                            if (savedKey.isEmpty()) {
+                                FridayOrange
+                            } else {
+                                FridayGreen
+                            },
                         fontSize = 14.sp
                     )
 
@@ -130,7 +164,8 @@ fun SettingsScreen(
                             Text("Paste a new key")
                         },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation =
+                            PasswordVisualTransformation()
                     )
 
                     OutlinedTextField(
@@ -147,8 +182,10 @@ fun SettingsScreen(
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement =
+                            Arrangement.spacedBy(8.dp),
+                        verticalAlignment =
+                            Alignment.CenterVertically
                     ) {
 
                         Button(
@@ -156,17 +193,20 @@ fun SettingsScreen(
 
                                 if (keyInput.isNotBlank()) {
                                     settings.saveApiKey(keyInput)
-                                    savedKey = settings.getApiKey()
+                                    savedKey =
+                                        settings.getApiKey()
                                     keyInput = ""
                                 }
 
                                 settings.saveModel(modelInput)
-                                savedModel = settings.getModel()
+                                savedModel =
+                                    settings.getModel()
                                 modelInput = savedModel
                             },
                             enabled =
                                 keyInput.isNotBlank() ||
-                                        modelInput.trim() != savedModel,
+                                        modelInput.trim() !=
+                                        savedModel,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = FridayCyan,
                                 contentColor = FridayBackground
@@ -192,8 +232,9 @@ fun SettingsScreen(
                     }
 
                     Text(
-                        text = "Get a free key at aistudio.google.com/apikey. " +
-                                "The key stays on this phone.",
+                        text =
+                            "Get a free key at aistudio.google.com/apikey. " +
+                                    "The key stays on this phone.",
                         color = FridayMuted,
                         fontSize = 12.sp
                     )
@@ -202,12 +243,146 @@ fun SettingsScreen(
         }
 
         item {
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = FridayCard
+                )
+            ) {
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+
+                    Text(
+                        text = "Alarms",
+                        color = FridayCyan,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text =
+                            "Your FRIDAY alarms use the phone's local time.",
+                        color = FridayMuted,
+                        fontSize = 13.sp
+                    )
+
+                    val enabledAlarms =
+                        alarms.filter {
+                            it.enabled
+                        }
+
+                    if (enabledAlarms.isEmpty()) {
+
+                        Text(
+                            text = "No active alarms.",
+                            color = FridayMuted,
+                            fontSize = 14.sp
+                        )
+
+                    } else {
+
+                        enabledAlarms.forEach { alarm ->
+
+                            val time =
+                                timeFormat.format(
+                                    Date(alarm.timeMillis)
+                                )
+
+                            val detail =
+                                if (alarm.repeatDaily) {
+                                    "Every day at $time"
+                                } else {
+                                    "Once • " +
+                                            dateTimeFormat.format(
+                                                Date(
+                                                    alarm.timeMillis
+                                                )
+                                            )
+                                }
+
+                            Card(
+                                modifier =
+                                    Modifier.fillMaxWidth(),
+                                shape =
+                                    RoundedCornerShape(14.dp),
+                                colors =
+                                    CardDefaults.cardColors(
+                                        containerColor =
+                                            FridayBackground
+                                    )
+                            ) {
+
+                                Row(
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically
+                                ) {
+
+                                    Column(
+                                        modifier =
+                                            Modifier.weight(1f),
+                                        verticalArrangement =
+                                            Arrangement.spacedBy(
+                                                4.dp
+                                            )
+                                    ) {
+
+                                        Text(
+                                            text = alarm.title,
+                                            color = FridayText,
+                                            fontSize = 15.sp,
+                                            fontWeight =
+                                                FontWeight.SemiBold
+                                        )
+
+                                        Text(
+                                            text = detail,
+                                            color = FridayCyan,
+                                            fontSize = 14.sp
+                                        )
+                                    }
+
+                                    TextButton(
+                                        onClick = {
+                                            kotlinx.coroutines.MainScope()
+                                                .launch {
+                                                    alarmRepository
+                                                        .deleteAlarm(alarm)
+                                                }
+                                        }
+                                    ) {
+                                        Text(
+                                            text = "Delete",
+                                            color = FridayMuted
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
             InfoCard(
                 title = "What Gemini sees",
-                body = "Your chat messages and the results of tools like your food " +
-                        "and water log. Journal text is never sent from here. " +
-                        "On Google's free tier, content may be used to improve " +
-                        "their products.",
+                body =
+                    "Your chat messages and the results of tools like your food " +
+                            "and water log. Journal text is never sent from here. " +
+                            "On Google's free tier, content may be used to improve " +
+                            "their products.",
                 accent = FridayBlue
             )
         }
@@ -215,9 +390,12 @@ fun SettingsScreen(
         item {
             InfoCard(
                 title = "Goals",
-                body = "Calorie and water goals are fixed at 2500 for now. Editable goals come later.",
+                body =
+                    "Calorie and water goals are fixed at 2500 for now. " +
+                            "Editable goals come later.",
                 accent = FridayBlue
             )
         }
     }
 }
+

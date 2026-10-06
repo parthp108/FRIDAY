@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -40,8 +39,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.material3.Button
 import com.health.friday.ai.AiMessage
 import com.health.friday.ai.AiOrchestrator
 import com.health.friday.ai.AiToolRegistry
@@ -340,6 +337,9 @@ class MainActivity : ComponentActivity() {
                     settingsRepository =
                         settingsRepository,
 
+                    alarmRepository =
+                        alarmRepository,
+
                     usageRefreshKey =
                         usageRefreshKey,
 
@@ -380,6 +380,9 @@ fun FridayApp(
     settingsRepository:
     SettingsRepository,
 
+    alarmRepository:
+    AlarmRepository,
+
     usageRefreshKey:
     Int,
 
@@ -400,10 +403,6 @@ fun FridayApp(
     }
 
     var showJournal by remember {
-        mutableStateOf(false)
-    }
-
-    var showSaveChatDialog by remember {
         mutableStateOf(false)
     }
 
@@ -428,10 +427,10 @@ fun FridayApp(
 
     fun closeWithoutSaving() {
 
-        showSaveChatDialog =
+        showAssistant =
             false
 
-        showAssistant =
+        showHistory =
             false
 
         assistantMessages =
@@ -446,26 +445,7 @@ fun FridayApp(
         aiOrchestrator.clearConversation()
     }
 
-    fun requestCloseAssistant() {
-
-        val hasUserMessage =
-            assistantMessages.any {
-                it.role == "user" &&
-                        it.content.isNotBlank()
-            }
-
-        if (hasUserMessage) {
-
-            showSaveChatDialog =
-                true
-
-        } else {
-
-            closeWithoutSaving()
-        }
-    }
-
-    fun saveAndCloseAssistant() {
+    fun saveConversation() {
 
         val userMessage =
             assistantMessages.firstOrNull {
@@ -492,7 +472,8 @@ fun FridayApp(
                 ChatMessage(
                     conversationId = 0,
                     role = it.role,
-                    content = it.content
+                    content = it.content,
+                    createdAt = it.createdAt
                 )
             }
 
@@ -508,9 +489,16 @@ fun FridayApp(
                 conversationId =
                     activeConversationId
             )
-
-            closeWithoutSaving()
         }
+    }
+
+    fun returnFromHistory() {
+
+        restoredMessages =
+            assistantMessages
+
+        showHistory =
+            false
     }
 
     fun openSavedConversation(
@@ -534,7 +522,10 @@ fun FridayApp(
                             it.role,
 
                         content =
-                            it.content
+                            it.content,
+
+                        createdAt =
+                            it.createdAt
                     )
                 }
 
@@ -559,67 +550,10 @@ fun FridayApp(
         }
     }
 
-    if (showSaveChatDialog) {
-
-        AlertDialog(
-            onDismissRequest = {
-                showSaveChatDialog =
-                    false
-            },
-
-            title = {
-                Text(
-                    "Save this conversation?"
-                )
-            },
-
-            text = {
-                Text(
-                    "You decide whether this FRIDAY conversation is saved."
-                )
-            },
-
-            confirmButton = {
-
-                TextButton(
-                    onClick = {
-                        saveAndCloseAssistant()
-                    }
-                ) {
-                    Text("Save")
-                }
-            },
-
-            dismissButton = {
-
-                Row {
-
-                    TextButton(
-                        onClick = {
-                            closeWithoutSaving()
-                        }
-                    ) {
-                        Text("Don't save")
-                    }
-
-                    TextButton(
-                        onClick = {
-                            showSaveChatDialog =
-                                false
-                        }
-                    ) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        )
-    }
-
     if (showHistory) {
 
         BackHandler {
-            showHistory =
-                false
+            returnFromHistory()
         }
 
         ChatHistoryScreen(
@@ -627,8 +561,7 @@ fun FridayApp(
                 chatRepository,
 
             onBack = {
-                showHistory =
-                    false
+                returnFromHistory()
             },
 
             onOpenConversation = {
@@ -639,7 +572,7 @@ fun FridayApp(
     } else if (showAssistant) {
 
         BackHandler {
-            requestCloseAssistant()
+            closeWithoutSaving()
         }
 
         Scaffold(
@@ -666,7 +599,26 @@ fun FridayApp(
 
                     TextButton(
                         onClick = {
-                            requestCloseAssistant()
+                            saveConversation()
+                        },
+
+                        enabled =
+                            assistantMessages.any {
+                                it.role == "user" &&
+                                        it.content.isNotBlank()
+                            }
+                    ) {
+
+                        Text(
+                            text = "Save",
+                            color =
+                                FridayCyan
+                        )
+                    }
+
+                    TextButton(
+                        onClick = {
+                            closeWithoutSaving()
                         }
                     ) {
 
@@ -960,7 +912,8 @@ fun FridayApp(
                     SettingsScreen(
                         settings =
                             settingsRepository,
-
+                        alarmRepository =
+                            alarmRepository,
                         modifier =
                             Modifier.padding(
                                 innerPadding
@@ -1187,3 +1140,4 @@ private fun ChatHistoryScreen(
         }
     }
 }
+
