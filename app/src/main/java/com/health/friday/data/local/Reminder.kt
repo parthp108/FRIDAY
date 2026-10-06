@@ -1,3 +1,4 @@
+
 package com.health.friday.data.local
 
 import androidx.room.Entity
@@ -15,5 +16,6 @@ data class Reminder(
 
     val enabled: Boolean = true,
 
-    val repeatDaily: Boolean = true
+    val repeatDaily: Boolean = false
 )
+

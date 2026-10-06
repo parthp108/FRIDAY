@@ -1,3 +1,4 @@
+
 package com.health.friday.reminders
 
 import com.health.friday.ai.AiTool
@@ -11,7 +12,6 @@ import java.util.regex.Pattern
 class ReminderTool(
     private val repository: ReminderRepository
 ) : AiTool {
-
 
     override val name = "reminder"
 
@@ -43,7 +43,8 @@ class ReminderTool(
             name = "repeatDaily",
             description =
                 "Whether the reminder should repeat every day. " +
-                        "Use true or false. Defaults to true."
+                        "Use true only when the user explicitly asks for a daily reminder. " +
+                        "Otherwise use false."
         )
     )
 
@@ -78,8 +79,10 @@ class ReminderTool(
                         arguments["repeatDaily"]
                             ?.trim()
                             ?.lowercase()
-                            ?.let { it == "true" }
-                            ?: true
+                            ?.let {
+                                it == "true"
+                            }
+                            ?: false
                 )
             }
 
@@ -124,7 +127,9 @@ class ReminderTool(
             for (reminder in reminders) {
 
                 val time =
-                    formatDateTime(reminder.timeMillis)
+                    formatDateTime(
+                        reminder.timeMillis
+                    )
 
                 val status =
                     if (reminder.enabled) {
@@ -166,7 +171,8 @@ class ReminderTool(
             parseTime(time)
 
         if (timeMillis == null) {
-            return "Nothing added. I couldn't understand the reminder time \"$time\". Use a time such as 08:00, 21:30, or in 10 minutes."
+            return "Nothing added. I couldn't understand the reminder time \"$time\". " +
+                    "Use a time such as 08:00, 21:30, or in 10 minutes."
         }
 
         val existing =
@@ -183,7 +189,10 @@ class ReminderTool(
             }
 
         if (duplicate != null) {
-            return "That reminder already exists: \"${duplicate.title}\" at ${formatDateTime(duplicate.timeMillis)}."
+            return "That reminder already exists: " +
+                    "\"${duplicate.title}\" at " +
+                    formatDateTime(duplicate.timeMillis) +
+                    "."
         }
 
         val saved =
@@ -198,7 +207,8 @@ class ReminderTool(
         }
 
         if (!saved.enabled) {
-            return "The reminder was saved but could not be scheduled. Exact alarm permission may be disabled."
+            return "The reminder was saved but could not be scheduled. " +
+                    "Exact alarm permission may be disabled."
         }
 
         val repeatText =
@@ -208,7 +218,8 @@ class ReminderTool(
                 "once"
             }
 
-        return "Added reminder: \"${saved.title}\" at ${formatDateTime(saved.timeMillis)}, $repeatText."
+        return "Added reminder: \"${saved.title}\" at " +
+                "${formatDateTime(saved.timeMillis)}, $repeatText."
     }
 
     private suspend fun changeReminderState(
@@ -347,11 +358,13 @@ class ReminderTool(
     ): Long? {
 
         val cleanValue =
-            value.trim().lowercase(Locale.getDefault())
+            value.trim().lowercase(Locale.ROOT)
 
         val relativePattern =
             Pattern.compile(
-                "^(?:in|after)\\s+(\\d+)\\s+(minute|minutes|min|mins|hour|hours|hr|hrs)$"
+                "^(?:in|after)\\s+" +
+                        "(\\d+)\\s+" +
+                        "(minute|minutes|min|mins|hour|hours|hr|hrs)$"
             )
 
         val relativeMatch =
@@ -401,6 +414,23 @@ class ReminderTool(
                     }
                 }
 
+                /*
+                 * Relative reminders are aligned to the start
+                 * of the resulting minute.
+                 *
+                 * Example:
+                 * 12:45:52 + 1 minute -> 12:46:00
+                 */
+                set(
+                    Calendar.SECOND,
+                    0
+                )
+
+                set(
+                    Calendar.MILLISECOND,
+                    0
+                )
+
             }.timeInMillis
         }
 
@@ -431,12 +461,16 @@ class ReminderTool(
 
             set(
                 Calendar.HOUR_OF_DAY,
-                parsedCalendar.get(Calendar.HOUR_OF_DAY)
+                parsedCalendar.get(
+                    Calendar.HOUR_OF_DAY
+                )
             )
 
             set(
                 Calendar.MINUTE,
-                parsedCalendar.get(Calendar.MINUTE)
+                parsedCalendar.get(
+                    Calendar.MINUTE
+                )
             )
 
             set(
@@ -449,7 +483,9 @@ class ReminderTool(
                 0
             )
 
-            if (timeInMillis <= now.timeInMillis) {
+            if (
+                timeInMillis <= now.timeInMillis
+            ) {
                 add(
                     Calendar.DAY_OF_YEAR,
                     1
@@ -468,6 +504,5 @@ class ReminderTool(
             Locale.getDefault()
         ).format(timeMillis)
     }
-
-
 }
+

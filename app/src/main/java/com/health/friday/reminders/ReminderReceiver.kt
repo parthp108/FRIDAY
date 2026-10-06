@@ -35,13 +35,16 @@ class ReminderReceiver : BroadcastReceiver() {
                 Context.NOTIFICATION_SERVICE
             ) as NotificationManager
 
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            "FRIDAY Reminders",
-            NotificationManager.IMPORTANCE_HIGH
-        )
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                "FRIDAY Reminders",
+                NotificationManager.IMPORTANCE_HIGH
+            )
 
-        notificationManager.createNotificationChannel(channel)
+        notificationManager.createNotificationChannel(
+            channel
+        )
 
         val notification =
             NotificationCompat.Builder(
@@ -51,7 +54,9 @@ class ReminderReceiver : BroadcastReceiver() {
                 .setSmallIcon(R.mipmap.ic_launcher)
                 .setContentTitle(title)
                 .setContentText(message)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setPriority(
+                    NotificationCompat.PRIORITY_HIGH
+                )
                 .setAutoCancel(true)
                 .build()
 
@@ -72,20 +77,48 @@ class ReminderReceiver : BroadcastReceiver() {
         context: Context,
         intent: Intent
     ) {
-        val nextTrigger = Calendar.getInstance().apply {
-            add(Calendar.DAY_OF_YEAR, 1)
-        }.timeInMillis
+
+        val now =
+            Calendar.getInstance()
+
+        val nextTrigger =
+            Calendar.getInstance().apply {
+
+                set(
+                    Calendar.HOUR_OF_DAY,
+                    now.get(Calendar.HOUR_OF_DAY)
+                )
+
+                set(
+                    Calendar.MINUTE,
+                    now.get(Calendar.MINUTE)
+                )
+
+                set(
+                    Calendar.SECOND,
+                    0
+                )
+
+                set(
+                    Calendar.MILLISECOND,
+                    0
+                )
+
+                add(
+                    Calendar.DAY_OF_YEAR,
+                    1
+                )
+            }.timeInMillis
 
         val title =
-            intent.getStringExtra(EXTRA_TITLE)
-                ?: "FRIDAY reminder"
+            intent.getStringExtra(
+                EXTRA_TITLE
+            ) ?: "FRIDAY reminder"
 
         val message =
-            intent.getStringExtra(EXTRA_MESSAGE)
-                ?: title
-
-        val scheduler =
-            ReminderScheduler(context)
+            intent.getStringExtra(
+                EXTRA_MESSAGE
+            ) ?: title
 
         val reminderId =
             intent.getLongExtra(
@@ -93,22 +126,32 @@ class ReminderReceiver : BroadcastReceiver() {
                 System.currentTimeMillis()
             )
 
-        scheduler.scheduleReminder(
-            reminderId = reminderId,
-            title = title,
-            message = message,
-            triggerAtMillis = nextTrigger,
-            repeatDaily = true
-        )
+        ReminderScheduler(context)
+            .scheduleReminder(
+                reminderId = reminderId,
+                title = title,
+                message = message,
+                triggerAtMillis = nextTrigger,
+                repeatDaily = true
+            )
     }
 
     companion object {
-        const val CHANNEL_ID = "friday_reminders"
 
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_MESSAGE = "extra_message"
-        const val EXTRA_REPEAT_DAILY = "extra_repeat_daily"
-        const val EXTRA_REMINDER_ID = "extra_reminder_id"
+        const val CHANNEL_ID =
+            "friday_reminders"
+
+        const val EXTRA_TITLE =
+            "extra_title"
+
+        const val EXTRA_MESSAGE =
+            "extra_message"
+
+        const val EXTRA_REPEAT_DAILY =
+            "extra_repeat_daily"
+
+        const val EXTRA_REMINDER_ID =
+            "extra_reminder_id"
     }
 }
 

@@ -1,90 +1,162 @@
 
 package com.health.friday.ai
 
-import java.time.LocalDate
-import java.time.LocalTime
-import java.time.ZoneId
+import com.health.friday.ai.parsers.LocalAlarmParser
+import com.health.friday.ai.parsers.LocalNutritionParser
+import com.health.friday.ai.parsers.LocalReminderParser
+import com.health.friday.ai.parsers.LocalTaskParser
+import java.util.Locale
+
+/*
+ * ============================================================================
+ * TEXT NORMALIZATION
+ * ============================================================================
+ */
+
+private fun normalize(
+    value: String
+): String {
+
+    return value
+        .lowercase(Locale.ROOT)
+        .replace('’', '\'')
+        .replace('“', '"')
+        .replace('”', '"')
+        .replace(Regex("[\\r\\n\\t]+"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
+/*
+ * ============================================================================
+ * QUESTION DETECTION
+ * ============================================================================
+ *
+ * This is deliberately broader than simply checking for '?'.
+ *
+ * Examples:
+ *
+ * "what did I eat"
+ * "show my nutrition"
+ * "how much water did I drink"
+ * "did I log lunch"
+ * "tell me today's calories"
+ */
 
 private val questionStart =
     Regex(
-        "^(what|how|did|do|does|is|are|can|should|have|has|why|when|which)\\b"
+        "^(what|how|did|do|does|is|are|can|could|should|have|has|had|" +
+                "why|when|which|show|list|tell|give|where|who|am|was|were|" +
+                "will|would|may|might)\\b"
     )
 
-private val eatVerb =
-    Regex("\\b(ate|eaten|eating|eat)\\b")
-
-private val mealWord =
-    Regex("\\b(breakfast|lunch|dinner|supper|snack)\\b")
-
-private val waterWord =
-    Regex("\\bwater\\b")
-
-private val nutritionWord =
+private val conversationalQuestion =
     Regex(
-        "\\b(eat|ate|eaten|calories|calorie|kcal|protein|carbs|carb|fat|" +
-                "macros|macro|nutrition|food|meals|meal|water|overeat\\w*)\\b"
+        "\\b(what|how|did|do|does|is|are|can|could|should|have|has|" +
+                "why|when|which|show|list|tell|give|where|who)\\b"
     )
+
+/*
+ * ============================================================================
+ * GREETINGS / BASIC CONVERSATION
+ * ============================================================================
+ */
 
 private val greetingWord =
-    Regex("\\b(hello|hi|hey)\\b")
-
-private val weekWord =
-    Regex("\\b(week|weekly|7 days|seven days)\\b")
-
-private val dayBeforeYesterday =
-    Regex("\\bday before yesterday\\b")
-
-private val yesterdayWord =
-    Regex("\\byesterday\\b")
-
-private val daysAgo =
-    Regex("\\b(\\d+)\\s+days?\\s+ago\\b")
-
-private val waterAmount =
     Regex(
-        "(\\d+(?:\\.\\d+)?)\\s*" +
-                "(ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|glass(?:es)?|bottles?|cups?)\\b"
+        "\\b(hello|hi|hey|hiya|good morning|good afternoon|good evening|" +
+                "good night)\\b"
     )
 
-private val articleBeforeUnit =
+private val identityQuestion =
     Regex(
-        "\\b(?:a|an|one)\\s+(?=(?:glass|glasses|bottle|bottles|cup|cups|litre|liter)\\b)"
+        "\\b(who are you|what are you|what is friday|who is friday)\\b"
     )
+
+private val capabilityQuestion =
+    Regex(
+        "\\b(what can you do|what do you do|what are your capabilities|" +
+                "what can friday do|what can you help with)\\b"
+    )
+
+private val thanksWord =
+    Regex(
+        "\\b(thanks|thank you|thx|appreciate it|much appreciated)\\b"
+    )
+
+private val goodbyeWord =
+    Regex(
+        "\\b(bye|goodbye|see you|good night)\\b"
+    )
+
+/*
+ * ============================================================================
+ * DOMAIN MARKERS
+ * ============================================================================
+ *
+ * These are routing signals only.
+ * Actual interpretation belongs to the individual parser.
+ */
 
 private val alarmWord =
     Regex(
         "\\b(alarm|alarms|wake me|wake-up|wake up)\\b"
     )
 
-private val alarmTime =
+private val reminderWord =
     Regex(
-        "\\b(?:at|for)\\s+(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)?\\b"
-    )
-private val relativeAlarm =
-    Regex(
-        "\\b(?:in|after|for)\\s+" +
-                "(\\d+(?:\\.\\d+)?)\\s*" +
-                "(seconds?|secs?|minutes?|mins?|hours?|hrs?)\\b"
+        "\\b(reminder|reminders|remind me)\\b"
     )
 
-private val tomorrowWord =
-    Regex("\\btomorrow\\b")
-
-private val dailyAlarmWord =
+private val taskWord =
     Regex(
-        "\\b(every day|everyday|daily|each day|every night|every morning)\\b"
+        "\\b(todo|todos|task|tasks|goal|goals|target|targets)\\b"
     )
+
+private val nutritionWord =
+    Regex(
+        "\\b(food|meal|meals|breakfast|lunch|dinner|snack|nutrition|" +
+                "calories|calorie|kcal|protein|proteins|carb|carbs|fat|fats|" +
+                "macro|macros|water|hydration)\\b"
+    )
+
+/*
+ * ============================================================================
+ * LOCAL AI ROUTER
+ * ============================================================================
+ */
 
 class LocalAiClient : AiClient {
+
+    private val taskParser =
+        LocalTaskParser()
+
+    private val reminderParser =
+        LocalReminderParser()
+
+    private val nutritionParser =
+        LocalNutritionParser()
+
+    private val alarmParser =
+        LocalAlarmParser()
 
     override suspend fun sendMessage(
         messages: List<AiMessage>,
         context: AiContext
     ): AiResponse {
 
-        // Second pass: the tools already ran, so this offline "AI"
-        // simply relays their results.
-        if (messages.lastOrNull()?.role == "tool") {
+        /*
+         * =====================================================================
+         * TOOL RESULTS
+         * =====================================================================
+         *
+         * Tool output is authoritative.
+         * Do not reinterpret it locally.
+         */
+
+        if (
+            messages.lastOrNull()?.role == "tool"
+        ) {
 
             val results =
                 messages
@@ -100,6 +172,12 @@ class LocalAiClient : AiClient {
             )
         }
 
+        /*
+         * =====================================================================
+         * CURRENT USER MESSAGE
+         * =====================================================================
+         */
+
         val original =
             messages
                 .lastOrNull {
@@ -109,28 +187,118 @@ class LocalAiClient : AiClient {
                 ?.trim()
                 ?: ""
 
+        if (original.isBlank()) {
+
+            return AiResponse(
+                message = "What do you need?"
+            )
+        }
+
         val text =
-            original.lowercase()
+            normalize(original)
 
         val isQuestion =
-            text.endsWith("?") ||
-                    questionStart.containsMatchIn(text)
+            isQuestion(
+                text = text
+            )
 
         /*
-         * Alarm commands are action requests, not questions.
+         * =====================================================================
+         * BASIC CONVERSATION
+         * =====================================================================
+         *
+         * Handle obvious conversational messages before domain routing.
          */
-        if (!isQuestion && alarmWord.containsMatchIn(text)) {
+
+        if (
+            greetingWord.containsMatchIn(text) &&
+            !containsDomainIntent(text)
+        ) {
+
+            return AiResponse(
+                message = "FRIDAY online. What do you need?"
+            )
+        }
+
+        if (
+            thanksWord.containsMatchIn(text) &&
+            !containsDomainIntent(text)
+        ) {
+
+            return AiResponse(
+                message = "You're welcome."
+            )
+        }
+
+        if (
+            goodbyeWord.containsMatchIn(text) &&
+            !containsDomainIntent(text)
+        ) {
+
+            return AiResponse(
+                message = "Goodbye."
+            )
+        }
+
+        if (
+            identityQuestion.containsMatchIn(text)
+        ) {
+
+            return AiResponse(
+                message =
+                    "I'm FRIDAY, your personal assistant."
+            )
+        }
+
+        if (
+            capabilityQuestion.containsMatchIn(text)
+        ) {
+
+            return AiResponse(
+                message =
+                    "I can manage meals, water, nutrition, TODOs, goals, " +
+                            "reminders, and alarms."
+            )
+        }
+
+        /*
+         * =====================================================================
+         * ALARMS
+         * =====================================================================
+         *
+         * Alarm gets priority over reminders because phrases such as
+         * "wake me at 7" are clearly alarm intent.
+         */
+
+        if (
+            alarmWord.containsMatchIn(text)
+        ) {
 
             val alarmCall =
-                createAlarmToolCall(
+                alarmParser.parse(
                     original = original,
                     text = text
                 )
 
             if (alarmCall != null) {
+
                 return AiResponse(
                     message = "",
                     toolCalls = listOf(alarmCall)
+                )
+            }
+
+            if (
+                Regex(
+                    "\\b(delete|remove|cancel|disable|turn off|stop)\\b"
+                ).containsMatchIn(text)
+            ) {
+
+                return AiResponse(
+                    message =
+                        "I can set alarms through the phone's Clock, " +
+                                "but Android doesn't give FRIDAY a public way " +
+                                "to remove that Clock alarm."
                 )
             }
 
@@ -142,118 +310,165 @@ class LocalAiClient : AiClient {
             )
         }
 
-        if (!isQuestion) {
+        /*
+         * =====================================================================
+         * REMINDERS
+         * =====================================================================
+         */
 
-            val toolCalls =
-                mutableListOf<AiToolCall>()
+        if (
+            reminderParser.isReminderRequest(text)
+        ) {
 
-            val date =
-                extractDate(text)
-
-            val waterMl =
-                if (waterWord.containsMatchIn(text)) {
-                    extractWaterMl(text)
-                } else {
-                    null
-                }
-
-            if (waterMl != null) {
-
-                val args =
-                    mutableMapOf(
-                        "amount_ml" to waterMl.toString()
-                    )
-
-                if (date != null) {
-                    args["date"] = date
-                }
-
-                toolCalls.add(
-                    AiToolCall(
-                        name = "log_water",
-                        arguments = args
-                    )
+            val reminderCall =
+                reminderParser.parse(
+                    original = original,
+                    text = text,
+                    isQuestion = isQuestion
                 )
-            }
 
-            val looksLikeMeal =
-                eatVerb.containsMatchIn(text) ||
-                        (
-                                mealWord.containsMatchIn(text) &&
-                                        Regex("\\d").containsMatchIn(text)
-                                )
+            if (reminderCall != null) {
 
-            if (looksLikeMeal) {
-
-                val args =
-                    mutableMapOf(
-                        "text" to original
-                    )
-
-                if (date != null) {
-                    args["date"] = date
-                }
-
-                toolCalls.add(
-                    AiToolCall(
-                        name = "log_meal",
-                        arguments = args
-                    )
-                )
-            }
-
-            if (toolCalls.isNotEmpty()) {
                 return AiResponse(
                     message = "",
-                    toolCalls = toolCalls
+                    toolCalls = listOf(reminderCall)
+                )
+            }
+
+            if (
+                reminderParser.needsTime(
+                    text = text,
+                    isQuestion = isQuestion
+                )
+            ) {
+
+                return AiResponse(
+                    message =
+                        "What time should I remind you?"
+                )
+            }
+
+            /*
+             * The message clearly mentions reminders but does not
+             * contain enough information for the local parser.
+             *
+             * Do not fall through into nutrition/task handling.
+             */
+            if (
+                reminderWord.containsMatchIn(text)
+            ) {
+
+                return AiResponse(
+                    message =
+                        "Tell me what you want me to remind you about " +
+                                "and when."
                 )
             }
         }
 
-        if (weekWord.containsMatchIn(text)) {
+        /*
+         * =====================================================================
+         * TODO + GOALS
+         * =====================================================================
+         */
+
+        val taskCall =
+            taskParser.parse(
+                original = original,
+                text = text,
+                isQuestion = isQuestion
+            )
+
+        if (taskCall != null) {
+
             return AiResponse(
                 message = "",
-                toolCalls = listOf(
-                    AiToolCall(
-                        name = "get_week_nutrition"
-                    )
-                )
+                toolCalls = listOf(taskCall)
             )
         }
 
-        if (nutritionWord.containsMatchIn(text)) {
+        /*
+         * =====================================================================
+         * NUTRITION
+         * =====================================================================
+         *
+         * The parser decides whether this is:
+         *
+         * - log_meal
+         * - log_water
+         * - get_today_nutrition
+         * - get_week_nutrition
+         */
+
+        val nutritionCalls =
+            nutritionParser.parse(
+                original = original,
+                text = text,
+                isQuestion = isQuestion
+            )
+
+        if (nutritionCalls != null) {
+
             return AiResponse(
                 message = "",
-                toolCalls = listOf(
-                    AiToolCall(
-                        name = "get_today_nutrition"
-                    )
-                )
+                toolCalls = nutritionCalls
             )
         }
+
+        /*
+         * =====================================================================
+         * DOMAIN-SPECIFIC CLARIFICATION
+         * =====================================================================
+         *
+         * If the user clearly mentions a domain but the parser could not
+         * understand the requested action, ask instead of silently ignoring it.
+         */
+
+        if (
+            taskWord.containsMatchIn(text)
+        ) {
+
+            return AiResponse(
+                message =
+                    "Tell me what you want to add, complete, delete, " +
+                            "or see."
+            )
+        }
+
+        if (
+            nutritionWord.containsMatchIn(text) &&
+            isQuestion
+        ) {
+
+            return AiResponse(
+                message =
+                    "I couldn't determine which nutrition information " +
+                            "you want."
+            )
+        }
+
+        /*
+         * =====================================================================
+         * GENERAL CONVERSATION
+         * =====================================================================
+         */
 
         val reply =
             when {
 
-                greetingWord.containsMatchIn(text) ->
-                    "FRIDAY online. What do you need?"
-
-                text.contains("who are you") ->
-                    "I'm FRIDAY. Your personal assistant."
-
-                Regex("\\bhealth\\b")
-                    .containsMatchIn(text) ->
-                    "Health data isn't connected yet."
+                text.contains("health") ->
+                    "Health data isn't connected to the offline assistant yet."
 
                 text.contains("screen time") ->
                     "Screen time is on the Tasks tab. " +
                             "I can't answer questions about it yet."
 
+                isQuestion ->
+                    "I don't have enough information to answer that offline."
+
                 else ->
-                    "I'm in offline mode, so I only understand a few things. " +
-                            "Tell me what you ate (\"I ate 2 eggs and 2 slices of toast\"), " +
-                            "what you drank (\"drank 500 ml water\"), or ask what you've had today. " +
-                            "A full AI isn't connected yet."
+                    "I'm in offline mode. I can manage meals, water, " +
+                            "nutrition, TODOs, goals, reminders, and alarms."
             }
 
         return AiResponse(
@@ -261,380 +476,61 @@ class LocalAiClient : AiClient {
         )
     }
 
-    private fun createAlarmToolCall(
-        original: String,
+    /*
+     * =========================================================================
+     * QUESTION DETECTION
+     * =========================================================================
+     */
+
+    private fun isQuestion(
         text: String
-    ): AiToolCall? {
+    ): Boolean {
 
-        val zone =
-            ZoneId.systemDefault()
+        if (
+            text.endsWith("?")
+        ) {
+            return true
+        }
 
-        val now =
-            java.time.ZonedDateTime.now(zone)
+        if (
+            questionStart.containsMatchIn(text)
+        ) {
+            return true
+        }
 
         /*
-         * First check for relative alarms:
+         * Catch natural questions without requiring '?'.
          *
-         * "in 10 minutes"
-         * "after 30 minutes"
-         * "for 1 minute"
-         * "for 10 minutes"
-         * "in 2 hours"
-         * "after 45 seconds"
+         * Example:
+         * "tell me what I ate today"
+         * "can you show my tasks"
          */
-        val relativeMatch =
-            relativeAlarm.find(text)
 
-        val timeMillis: Long
-
-        if (relativeMatch != null) {
-
-            val amount =
-                relativeMatch.groupValues[1]
-                    .toDoubleOrNull()
-                    ?: return null
-
-            if (amount <= 0) {
-                return null
-            }
-
-            val unit =
-                relativeMatch.groupValues[2]
-                    .lowercase()
-
-            val delayMillis =
-                when {
-                    unit.startsWith("second") ||
-                            unit.startsWith("sec") ->
-                        (amount * 1_000.0).toLong()
-
-                    unit.startsWith("minute") ||
-                            unit.startsWith("min") ->
-                        (amount * 60_000.0).toLong()
-
-                    unit.startsWith("hour") ||
-                            unit.startsWith("hr") ->
-                        (amount * 3_600_000.0).toLong()
-
-                    else ->
-                        return null
-                }
-
-            if (delayMillis <= 0) {
-                return null
-            }
-
-            /*
-             * Minute/hour alarms ignore the current seconds.
-             *
-             * Example:
-             * 12:25:26 + 1 minute -> 12:26:00
-             * 12:25:59 + 1 minute -> 12:26:00
-             *
-             * Second-based alarms still use the exact current time.
-             */
-            timeMillis =
-                if (
-                    unit.startsWith("minute") ||
-                    unit.startsWith("min") ||
-                    unit.startsWith("hour") ||
-                    unit.startsWith("hr")
-                ) {
-
-                    val baseTime =
-                        now
-                            .withSecond(0)
-                            .withNano(0)
-
-                    baseTime
-                        .plusNanos(
-                            delayMillis * 1_000_000L
-                        )
-                        .toInstant()
-                        .toEpochMilli()
-
-                } else {
-
-                    now
-                        .plusNanos(
-                            delayMillis * 1_000_000L
-                        )
-                        .toInstant()
-                        .toEpochMilli()
-                }
-
-        } else {
-
-            /*
-             * Otherwise look for an absolute clock time:
-             *
-             * "at 7"
-             * "at 7:30"
-             * "at 7 PM"
-             * "at 7:30 PM"
-             */
-            val match =
-                alarmTime.find(text)
-                    ?: return null
-
-            val hourValue =
-                match.groupValues[1]
-                    .toIntOrNull()
-                    ?: return null
-
-            val minuteValue =
-                if (match.groupValues[2].isEmpty()) {
-                    0
-                } else {
-                    match.groupValues[2]
-                        .toIntOrNull()
-                        ?: return null
-                }
-
-            val meridiem =
-                match.groupValues[3]
-                    .lowercase()
-
-            var hour =
-                hourValue
-
-            if (minuteValue !in 0..59) {
-                return null
-            }
-
-            if (meridiem.isNotEmpty()) {
-
-                if (hour !in 1..12) {
-                    return null
-                }
-
-                hour =
-                    when (meridiem) {
-                        "am" ->
-                            if (hour == 12) 0 else hour
-
-                        "pm" ->
-                            if (hour == 12) 12 else hour + 12
-
-                        else ->
-                            return null
-                    }
-
-            } else {
-
-                if (hour !in 0..23) {
-                    return null
-                }
-            }
-
-            var alarmDate =
-                LocalDate.now(zone)
-
-            val requestedTime =
-                LocalTime.of(
-                    hour,
-                    minuteValue
-                )
-
-            var alarmDateTime =
-                alarmDate.atTime(requestedTime)
-
-            val tomorrow =
-                tomorrowWord.containsMatchIn(text)
-
-            val repeatDaily =
-                dailyAlarmWord.containsMatchIn(text)
-
-            if (tomorrow) {
-
-                alarmDate =
-                    alarmDate.plusDays(1)
-
-                alarmDateTime =
-                    alarmDate.atTime(requestedTime)
-
-            } else if (
-                !repeatDaily &&
-                !alarmDateTime.isAfter(now.toLocalDateTime())
-            ) {
-
-                /*
-                 * If today's requested time has already passed,
-                 * schedule the one-time alarm for tomorrow.
-                 */
-                alarmDate =
-                    alarmDate.plusDays(1)
-
-                alarmDateTime =
-                    alarmDate.atTime(requestedTime)
-            }
-
-            timeMillis =
-                alarmDateTime
-                    .atZone(zone)
-                    .toInstant()
-                    .toEpochMilli()
+        if (
+            conversationalQuestion.containsMatchIn(text) &&
+            Regex(
+                "\\b(tell|show|give|list|check|know|see)\\b"
+            ).containsMatchIn(text)
+        ) {
+            return true
         }
 
-        val repeatDaily =
-            dailyAlarmWord.containsMatchIn(text)
-
-        val title =
-            extractAlarmTitle(
-                original
-            )
-
-        return AiToolCall(
-            name = "set_alarm",
-            arguments =
-                mapOf(
-                    "title" to title,
-                    "timeMillis" to timeMillis.toString(),
-                    "repeatDaily" to repeatDaily.toString()
-                )
-        )
+        return false
     }
 
-    private fun extractAlarmTitle(
-        original: String
-    ): String {
+    /*
+     * =========================================================================
+     * DOMAIN DETECTION
+     * =========================================================================
+     */
 
-        val cleaned =
-            original
-                .replace(
-                    Regex(
-                        "(?i)\\b(set|create|make|put|schedule)\\b"
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        "(?i)\\b(an?|the)\\s+alarm\\b"
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex(
-                        "(?i)\\b(alarm|wake me|wake-up|wake up)\\b"
-                    ),
-                    ""
-                )
-                .replace(
-                    alarmTime,
-                    ""
-                )
-                .replace(
-                    relativeAlarm,
-                    ""
-                )
-                .replace(
-                    tomorrowWord,
-                    ""
-                )
-                .replace(
-                    dailyAlarmWord,
-                    ""
-                )
-                .replace(
-                    Regex(
-                        "(?i)\\b(for|at|on)\\b"
-                    ),
-                    ""
-                )
-                .replace(
-                    Regex("\\s+"),
-                    " "
-                )
-                .trim(
-                    ' ',
-                    '.',
-                    ',',
-                    '!'
-                )
-
-        return if (cleaned.isEmpty()) {
-            "Alarm"
-        } else {
-            cleaned
-        }
-    }
-
-    private fun extractDate(
+    private fun containsDomainIntent(
         text: String
-    ): String? {
+    ): Boolean {
 
-        if (dayBeforeYesterday.containsMatchIn(text)) {
-            return "day before yesterday"
-        }
-
-        if (yesterdayWord.containsMatchIn(text)) {
-            return "yesterday"
-        }
-
-        val ago =
-            daysAgo.find(text)
-
-        if (ago != null) {
-            return "${ago.groupValues[1]} days ago"
-        }
-
-        return null
-    }
-
-    // glass and cup count as 250 ml, a bottle as 500 ml.
-    private fun extractWaterMl(
-        text: String
-    ): Int? {
-
-        val prepared =
-            articleBeforeUnit.replace(
-                text,
-                "1 "
-            )
-
-        val match =
-            waterAmount.find(prepared)
-                ?: return null
-
-        val amount =
-            match.groupValues[1]
-                .toDoubleOrNull()
-                ?: return null
-
-        val unit =
-            match.groupValues[2]
-
-        val ml =
-            when {
-                unit == "ml" ||
-                        unit.startsWith("milli") ->
-                    amount
-
-                unit == "l" ||
-                        unit.startsWith("lit") ->
-                    amount * 1000
-
-                unit.startsWith("glass") ->
-                    amount * 250
-
-                unit.startsWith("bottle") ->
-                    amount * 500
-
-                unit.startsWith("cup") ->
-                    amount * 250
-
-                else ->
-                    return null
-            }
-
-        val rounded =
-            Math.round(ml).toInt()
-
-        return if (rounded > 0) {
-            rounded
-        } else {
-            null
-        }
+        return alarmWord.containsMatchIn(text) ||
+                reminderWord.containsMatchIn(text) ||
+                taskWord.containsMatchIn(text) ||
+                nutritionWord.containsMatchIn(text)
     }
 }
-
