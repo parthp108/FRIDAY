@@ -1,19 +1,35 @@
-<?xml version="1.0" encoding="utf-8"?><!--
-   Sample data extraction rules file; uncomment and customize as necessary.
-   See https://developer.android.com/about/versions/12/backup-restore#xml-changes
-   for details.
--->
+<?xml version="1.0" encoding="utf-8"?>
+
 <data-extraction-rules>
-    <cloud-backup>
-        <!-- TODO: Use <include> and <exclude> to control what is backed up.
-        <include .../>
-        <exclude .../>
-        -->
-    </cloud-backup>
+
     <!--
-    <device-transfer>
-        <include .../>
-        <exclude .../>
-    </device-transfer>
+        Cloud backup.
+
+        FRIDAY's Room database contains the user's actual
+        application data and should be included.
+
+        friday_settings is intentionally excluded because
+        it contains the Gemini API key.
     -->
+    <cloud-backup>
+        <include
+            domain="database"
+            path="friday_database" />
+    </cloud-backup>
+
+    <!--
+        Device-to-device transfer.
+
+        Transfer the same FRIDAY database when moving to
+        another Android device.
+
+        Settings containing the Gemini API key are not transferred.
+    -->
+    <device-transfer>
+        <include
+            domain="database"
+            path="friday_database" />
+    </device-transfer>
+
 </data-extraction-rules>
+

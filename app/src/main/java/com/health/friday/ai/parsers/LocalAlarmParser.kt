@@ -34,47 +34,7 @@ import java.util.Locale
  *   730   -> 07:30
  *   1234  -> 12:34
  *
- * The final two digits are always minutes.
- * Everything before them is the hour.
- *
- * Relative:
- *
- *   "wake me in 10 minutes"
- *   "alarm in 2 hours"
- *   "wake me after 30 seconds"
- *
- * Tomorrow:
- *
- *   "wake me tomorrow at 7 AM"
- *   "wake me tomorrow at 730"
- *
- * Daily:
- *
- *   "wake me every day at 7"
- *   "alarm every morning at 630"
- *   "set a daily alarm for 8 PM"
- *
- * The parser does NOT schedule anything.
- * It only produces an AiToolCall.
- */
 
-/*
- * ============================================================================
- * TIME EXPRESSIONS
- * ============================================================================
- */
-
-/*
- * Standard clock notation.
- *
- * Examples:
- *
- * 7
- * 7:30
- * 7 PM
- * 7:30 PM
- * 19
- * 19:30
  */
 private val absoluteTime =
     Regex(
@@ -83,21 +43,6 @@ private val absoluteTime =
         RegexOption.IGNORE_CASE
     )
 
-/*
- * Compact clock notation.
- *
- * The expression deliberately allows 1–4 digits.
- *
- * Examples:
- *
- * 7
- * 12
- * 123
- * 730
- * 1234
- *
- * It is only converted after the standard time expression fails.
- */
 private val compactTime =
     Regex(
         "\\b(?:at|for)\\s+(\\d{1,4})\\b",
