@@ -1,5 +1,21 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Background / Window Color Resource Definition -->
+    <color name="window_background">#000000</color>
 
-    <style name="Theme.FRIDAY" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.FRIDAY" parent="Theme.Material3.Dark.NoActionBar">
+        <!-- Window & Background Styling -->
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:windowActionModeOverlay">true</item>
+
+        <!-- Display Cutout Mode for Edge-to-Edge -->
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+
+        <!-- System Bar Styling & Edge-to-Edge -->
+        <!-- Note: When using enableEdgeToEdge() in Kotlin, these act as fallbacks -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:enforceNavigationBarContrast">true</item>
+    </style>
 </resources>

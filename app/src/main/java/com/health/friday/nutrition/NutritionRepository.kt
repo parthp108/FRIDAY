@@ -1,3 +1,4 @@
+
 package com.health.friday.nutrition
 
 import com.health.friday.data.local.Meal
@@ -44,9 +45,7 @@ class NutritionRepository(
         }
     }
 
-    fun observeMealsForDay(
-        dayStart: Long
-    ): Flow<List<Meal>> {
+    fun observeMealsForDay(dayStart: Long): Flow<List<Meal>> {
         return mealDao.getMealsForDay(
             startOfDay = dayStart,
             endOfDay = DayRange.shiftDays(dayStart, 1)
@@ -58,36 +57,31 @@ class NutritionRepository(
         mealType: String,
         timestamp: Long = System.currentTimeMillis()
     ): LogFoodsResult {
-
         val logged = mutableListOf<LoggedFood>()
         val skipped = mutableListOf<FoodItem>()
 
         for (food in foods) {
-
-            val nutrition =
-                nutritionProvider.getNutrition(food)
+            val nutrition = nutritionProvider.getNutrition(food)
 
             if (nutrition == null) {
                 skipped.add(food)
                 continue
             }
 
-            val displayName =
-                displayName(food)
+            val displayName = displayName(food)
 
-            val meal =
-                Meal(
-                    name = displayName,
-                    mealType = mealType,
-                    calories = nutrition.calories.roundToInt(),
-                    protein = nutrition.protein,
-                    carbohydrates = nutrition.carbohydrates,
-                    fat = nutrition.fat,
-                    timestamp = timestamp
-                )
+            val meal = Meal(
+                name = displayName,
+                mealType = mealType,
+                calories = nutrition.calories.roundToInt(),
+                protein = nutrition.protein,
+                carbohydrates = nutrition.carbohydrates,
+                fat = nutrition.fat,
+                timestamp = timestamp,
+                nutrientsJson = nutrition.toNutrientsJson()
+            )
 
-            val mealId =
-                mealDao.insertMeal(meal)
+            val mealId = mealDao.insertMeal(meal)
 
             try {
                 healthConnectRepository.writeMeal(
@@ -101,8 +95,7 @@ class NutritionRepository(
                     timestamp = timestamp
                 )
             } catch (_: Exception) {
-                // Keep the FRIDAY entry even if Health Connect
-                // is temporarily unavailable.
+                // FRIDAY's local entry remains the source of truth.
             }
 
             logged.add(
@@ -119,9 +112,6 @@ class NutritionRepository(
         )
     }
 
-    // Saves a meal whose nutrition numbers were estimated by the AI.
-    // The meal is still stored locally as the source of truth and
-    // is also written to Health Connect.
     suspend fun logEstimated(
         name: String,
         mealType: String,
@@ -131,21 +121,18 @@ class NutritionRepository(
         fat: Double,
         timestamp: Long
     ) {
+        val meal = Meal(
+            name = name,
+            mealType = mealType,
+            calories = calories,
+            protein = protein,
+            carbohydrates = carbohydrates,
+            fat = fat,
+            timestamp = timestamp,
+            isEstimated = true
+        )
 
-        val meal =
-            Meal(
-                name = name,
-                mealType = mealType,
-                calories = calories,
-                protein = protein,
-                carbohydrates = carbohydrates,
-                fat = fat,
-                timestamp = timestamp,
-                isEstimated = true
-            )
-
-        val mealId =
-            mealDao.insertMeal(meal)
+        val mealId = mealDao.insertMeal(meal)
 
         try {
             healthConnectRepository.writeMeal(
@@ -159,22 +146,17 @@ class NutritionRepository(
                 timestamp = timestamp
             )
         } catch (_: Exception) {
-            // Keep the FRIDAY entry even if Health Connect
-            // is temporarily unavailable.
+            // Keep the estimated meal in FRIDAY even if Health Connect fails.
         }
     }
 
     suspend fun getTodaySummary(): DaySummary {
-
         val range = DayRange.today()
 
-        val meals =
-            mealDao
-                .getMealsForDay(
-                    startOfDay = range.first,
-                    endOfDay = range.second
-                )
-                .first()
+        val meals = mealDao.getMealsForDay(
+            startOfDay = range.first,
+            endOfDay = range.second
+        ).first()
 
         return DaySummary(
             calories = meals.sumOf { it.calories },
@@ -189,60 +171,40 @@ class NutritionRepository(
         startMillis: Long,
         endMillis: Long
     ): List<Meal> {
-
-        return mealDao
-            .getMealsForDay(
-                startOfDay = startMillis,
-                endOfDay = endMillis
-            )
-            .first()
+        return mealDao.getMealsForDay(
+            startOfDay = startMillis,
+            endOfDay = endMillis
+        ).first()
     }
 
-    suspend fun deleteMeal(
-        meal: Meal
-    ) {
-
+    suspend fun deleteMeal(meal: Meal) {
         mealDao.deleteMeal(meal)
 
         try {
-            healthConnectRepository.deleteMeal(
-                mealId = meal.id
-            )
+            healthConnectRepository.deleteMeal(mealId = meal.id)
         } catch (_: Exception) {
-            // Local FRIDAY deletion remains successful.
+            // Local deletion remains successful.
         }
     }
 
-    private fun displayName(
-        food: FoodItem
-    ): String {
-
-        val name =
-            food.name.replaceFirstChar {
-                it.uppercase()
-            }
-
-        val quantity =
-            formatQuantity(food.quantity)
+    private fun displayName(food: FoodItem): String {
+        val name = food.name.replaceFirstChar { it.uppercase() }
+        val quantity = formatQuantity(food.quantity)
 
         if (food.unit == "piece") {
             return "$name × $quantity"
         }
 
-        val unit =
-            if (food.quantity == 1.0) {
-                food.unit
-            } else {
-                food.unit + "s"
-            }
+        val unit = if (food.quantity == 1.0) {
+            food.unit
+        } else {
+            food.unit + "s"
+        }
 
         return "$name × $quantity $unit"
     }
 
-    private fun formatQuantity(
-        quantity: Double
-    ): String {
-
+    private fun formatQuantity(quantity: Double): String {
         return if (quantity % 1.0 == 0.0) {
             quantity.toInt().toString()
         } else {

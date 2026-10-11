@@ -1,3 +1,4 @@
+
 package com.health.friday.data.local
 
 import androidx.room.ColumnInfo
@@ -25,5 +26,8 @@ data class Meal(
     val timestamp: Long = System.currentTimeMillis(),
 
     @ColumnInfo(defaultValue = "0")
-    val isEstimated: Boolean = false
+    val isEstimated: Boolean = false,
+
+    @ColumnInfo(defaultValue = "'[]'")
+    val nutrientsJson: String = "[]"
 )

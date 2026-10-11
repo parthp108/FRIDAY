@@ -11,10 +11,7 @@ import com.health.friday.alarms.Alarm
 import com.health.friday.alarms.AlarmDao
 
 private val MIGRATION_2_3 = object : Migration(2, 3) {
-
-    override fun migrate(
-        db: SupportSQLiteDatabase
-    ) {
+    override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             "ALTER TABLE meals ADD COLUMN isEstimated INTEGER NOT NULL DEFAULT 0"
         )
@@ -22,11 +19,7 @@ private val MIGRATION_2_3 = object : Migration(2, 3) {
 }
 
 private val MIGRATION_3_4 = object : Migration(3, 4) {
-
-    override fun migrate(
-        db: SupportSQLiteDatabase
-    ) {
-
+    override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS chat_conversations (
@@ -63,11 +56,7 @@ private val MIGRATION_3_4 = object : Migration(3, 4) {
 }
 
 private val MIGRATION_4_5 = object : Migration(4, 5) {
-
-    override fun migrate(
-        db: SupportSQLiteDatabase
-    ) {
-
+    override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS reminders (
@@ -83,11 +72,7 @@ private val MIGRATION_4_5 = object : Migration(4, 5) {
 }
 
 private val MIGRATION_5_6 = object : Migration(5, 6) {
-
-    override fun migrate(
-        db: SupportSQLiteDatabase
-    ) {
-
+    override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS alarms (
@@ -98,6 +83,14 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
                 repeatDaily INTEGER NOT NULL
             )
             """.trimIndent()
+        )
+    }
+}
+
+private val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE meals ADD COLUMN nutrientsJson TEXT NOT NULL DEFAULT '[]'"
         )
     }
 }
@@ -114,27 +107,19 @@ private val MIGRATION_5_6 = object : Migration(5, 6) {
         ChatConversation::class,
         ChatMessage::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
 
     abstract fun mealDao(): MealDao
-
     abstract fun waterDao(): WaterDao
-
     abstract fun reminderDao(): ReminderDao
-
     abstract fun alarmDao(): AlarmDao
-
     abstract fun todoDao(): TodoDao
-
     abstract fun goalDao(): GoalDao
-
     abstract fun journalDao(): JournalDao
-
     abstract fun chatConversationDao(): ChatConversationDao
-
     abstract fun chatMessageDao(): ChatMessageDao
 
     companion object {
@@ -142,32 +127,23 @@ abstract class FridayDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: FridayDatabase? = null
 
-        fun getDatabase(
-            context: Context
-        ): FridayDatabase {
-
-            return INSTANCE
-                ?: synchronized(this) {
-
-                    val instance =
-                        Room.databaseBuilder(
-                            context.applicationContext,
-                            FridayDatabase::class.java,
-                            "friday_database"
-                        )
-                            .addMigrations(
-                                MIGRATION_2_3,
-                                MIGRATION_3_4,
-                                MIGRATION_4_5,
-                                MIGRATION_5_6
-                            )
-                            .build()
-
-                    INSTANCE = instance
-
-                    instance
-                }
+        fun getDatabase(context: Context): FridayDatabase {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: Room.databaseBuilder(
+                    context.applicationContext,
+                    FridayDatabase::class.java,
+                    "friday_database"
+                )
+                    .addMigrations(
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                        MIGRATION_6_7
+                    )
+                    .build()
+                    .also { INSTANCE = it }
+            }
         }
     }
 }
-

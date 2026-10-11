@@ -1,3 +1,4 @@
+
 package com.health.friday.nutrition
 
 import com.health.friday.ai.AiTool
@@ -25,7 +26,6 @@ private val ignoredWords =
 private fun leftoverWords(
     unknownText: String
 ): List<String> {
-
     return unknownText
         .split(Regex("[^a-z]+"))
         .filter { it.length > 1 && it !in ignoredWords }
@@ -35,7 +35,6 @@ private fun leftoverWords(
 private fun typicalHour(
     mealType: String
 ): Int {
-
     return when (mealType) {
         "Breakfast" -> 8
         "Lunch" -> 13
@@ -47,6 +46,14 @@ private fun typicalHour(
 
 private const val DATE_HELP =
     "Use today, yesterday, \"3 days ago\" or YYYY-MM-DD."
+
+private fun formatGrams(grams: Double): String {
+    return if (grams % 1.0 == 0.0) {
+        grams.roundToInt().toString()
+    } else {
+        String.format(Locale.US, "%.1f", grams)
+    }
+}
 
 class LogMealTool(
     private val repository: NutritionRepository,
@@ -82,7 +89,6 @@ class LogMealTool(
     override suspend fun execute(
         arguments: Map<String, String>
     ): String {
-
         val text =
             arguments["text"]?.trim().orEmpty()
 
@@ -121,7 +127,10 @@ class LogMealTool(
             if (isToday) {
                 System.currentTimeMillis()
             } else {
-                DateParser.timestampOnDay(dayStart, typicalHour(mealType))
+                DateParser.timestampOnDay(
+                    dayStart,
+                    typicalHour(mealType)
+                )
             }
 
         val result =
@@ -145,15 +154,19 @@ class LogMealTool(
             if (isToday) "" else " for ${dayFormat.format(Date(dayStart))}"
 
         return buildString {
-
             append("Logged as $mealType$dayLabel:\n")
 
             for (item in result.logged) {
-
                 val n = item.nutrition
 
+                val weightText =
+                    n.totalGrams?.let { grams ->
+                        ", ${formatGrams(grams)} g"
+                    }.orEmpty()
+
                 append(
-                    "• ${item.displayName}: ${n.calories.roundToInt()} kcal " +
+                    "• ${item.displayName}$weightText: " +
+                            "${n.calories.roundToInt()} kcal " +
                             "(P ${n.protein.roundToInt()}g, " +
                             "C ${n.carbohydrates.roundToInt()}g, " +
                             "F ${n.fat.roundToInt()}g)\n"
@@ -168,16 +181,14 @@ class LogMealTool(
             }
 
             if (isToday) {
-
-                val summary = repository.getTodaySummary()
+                val summary =
+                    repository.getTodaySummary()
 
                 append(
                     "Today so far: ${summary.calories} of " +
                             "${NutritionGoals.CALORIES} kcal."
                 )
-
             } else {
-
                 val dayMeals =
                     repository.getMealsBetween(
                         dayStart,
@@ -220,7 +231,6 @@ class LogWaterTool(
     override suspend fun execute(
         arguments: Map<String, String>
     ): String {
-
         val amountMl =
             arguments["amount_ml"]
                 ?.trim()
@@ -243,7 +253,6 @@ class LogWaterTool(
             dayStart == DayRange.today().first
 
         if (isToday) {
-
             waterRepository.addWater(amountMl)
 
             val total =
@@ -280,7 +289,6 @@ class GetTodayNutritionTool(
     override suspend fun execute(
         arguments: Map<String, String>
     ): String {
-
         val summary =
             repository.getTodaySummary()
 
@@ -288,7 +296,6 @@ class GetTodayNutritionTool(
             waterRepository.getTodayTotalMl()
 
         return buildString {
-
             append(
                 "Today: ${summary.calories} of ${NutritionGoals.CALORIES} kcal. " +
                         "Protein ${summary.protein.roundToInt()}g, " +
@@ -303,7 +310,6 @@ class GetTodayNutritionTool(
             if (summary.meals.isEmpty()) {
                 append("No meals logged today.")
             } else {
-
                 append("Meals:")
 
                 for (meal in summary.meals) {

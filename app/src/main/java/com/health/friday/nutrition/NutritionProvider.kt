@@ -1,8 +1,9 @@
+
 package com.health.friday.nutrition
 
 interface NutritionProvider {
 
-    fun getNutrition(
+    suspend fun getNutrition(
         food: FoodItem
     ): NutritionResult?
 }

@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
             HealthConnectRepository(this)
 
         val nutritionProvider =
-            LocalNutritionProvider()
+            LocalNutritionProvider(this)
 
         val nutritionRepository =
             NutritionRepository(

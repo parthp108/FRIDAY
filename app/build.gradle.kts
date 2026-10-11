@@ -58,6 +58,7 @@ dependencies {
 
     // Health Connect
     implementation("androidx.health.connect:connect-client:1.2.0-alpha06")
+    implementation(libs.material)
 
     testImplementation(libs.junit)
 
