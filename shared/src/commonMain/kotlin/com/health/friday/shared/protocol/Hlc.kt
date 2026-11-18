@@ -29,7 +29,11 @@ data class HlcTimestamp(
             if (parts.size != 3) return null
             val wall = parts[0].toLongOrNull() ?: return null
             val counter = parts[1].toIntOrNull(16) ?: return null
-            if (wall < 0 || counter < 0 || parts[2].isEmpty()) return null
+            if (
+                wall < 0 ||
+                counter !in 0..0xFFFF ||
+                parts[2].isEmpty()
+            ) return null
             return HlcTimestamp(wall, counter, parts[2])
         }
     }

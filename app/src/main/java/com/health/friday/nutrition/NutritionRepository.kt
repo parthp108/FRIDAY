@@ -9,6 +9,10 @@ import com.health.friday.nutrition.calibration.FoodCalibrationEntity
 import com.health.friday.nutrition.calibration.scaleNutrientsJson
 import com.health.friday.nutrition.calibration.scaledBy
 import com.health.friday.util.DayRange
+import com.health.friday.sync.cloud.AndroidCloudSyncWriter
+import com.health.friday.sync.cloud.CloudSyncMutation
+import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
+import com.health.friday.sync.cloud.toCloudSyncPayload
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -70,7 +74,8 @@ class NutritionRepository(
     private val mealDao: MealDao,
     private val nutritionProvider: NutritionProvider,
     private val healthConnectRepository: HealthConnectRepository,
-    private val calibrationEngine: FoodCalibrationEngine
+    private val calibrationEngine: FoodCalibrationEngine,
+    private val cloudSyncWriter: AndroidCloudSyncWriter? = null
 ) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -133,7 +138,7 @@ class NutritionRepository(
                 nutrientsJson = nutrition.toNutrientsJson()
             )
 
-            val mealId = mealDao.insertMeal(meal)
+            val mealId = insertMealWithSync(meal)
 
             try {
                 healthConnectRepository.writeMeal(
@@ -250,7 +255,7 @@ class NutritionRepository(
     }
 
     suspend fun deleteMeal(meal: Meal) {
-        mealDao.deleteMeal(meal)
+        deleteMealWithSync(meal)
 
         try {
             healthConnectRepository.deleteMeal(mealId = meal.id)
@@ -318,7 +323,7 @@ class NutritionRepository(
             nutrientsJson = target.nutrientsJson.scaleNutrientsJson(ratio)
         )
 
-        mealDao.updateMeal(updated)
+        updateMealWithSync(updated)
         rewriteInHealthConnect(updated)
 
         // The calories the user saw (target.calories) are the "shown" estimate.
@@ -375,7 +380,7 @@ class NutritionRepository(
             nutrientsJson = nutrientsJson
         )
 
-        mealDao.updateMeal(restored)
+        updateMealWithSync(restored)
         rewriteInHealthConnect(restored)
 
         return meal.name
@@ -435,6 +440,62 @@ class NutritionRepository(
             quantity.toInt().toString()
         } else {
             quantity.toString()
+        }
+    }
+
+    private suspend fun insertMealWithSync(meal: Meal): Long {
+        val writer = cloudSyncWriter
+            ?: return mealDao.insertMeal(meal)
+
+        return writer.upsert(
+            entityType = CloudSyncEntityTypes.MEAL,
+            entityId = meal.syncId
+        ) { hlc ->
+            val stamped = meal.copy(syncHlc = hlc)
+            val id = mealDao.insertMeal(stamped)
+
+            CloudSyncMutation(
+                value = id,
+                payload = stamped.toCloudSyncPayload()
+            )
+        }
+    }
+
+    private suspend fun updateMealWithSync(meal: Meal) {
+        val writer = cloudSyncWriter
+
+        if (writer == null) {
+            mealDao.updateMeal(meal)
+            return
+        }
+
+        writer.upsert(
+            entityType = CloudSyncEntityTypes.MEAL,
+            entityId = meal.syncId
+        ) { hlc ->
+            val stamped = meal.copy(syncHlc = hlc)
+            mealDao.updateMeal(stamped)
+
+            CloudSyncMutation(
+                value = Unit,
+                payload = stamped.toCloudSyncPayload()
+            )
+        }
+    }
+
+    private suspend fun deleteMealWithSync(meal: Meal) {
+        val writer = cloudSyncWriter
+
+        if (writer == null) {
+            mealDao.deleteMeal(meal)
+            return
+        }
+
+        writer.delete(
+            entityType = CloudSyncEntityTypes.MEAL,
+            entityId = meal.syncId
+        ) {
+            mealDao.deleteMeal(meal)
         }
     }
 }

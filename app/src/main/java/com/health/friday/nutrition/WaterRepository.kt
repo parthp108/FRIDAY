@@ -3,6 +3,10 @@ package com.health.friday.nutrition
 import com.health.friday.data.local.WaterDao
 import com.health.friday.data.local.WaterEntry
 import com.health.friday.device.HealthConnectRepository
+import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
+import com.health.friday.sync.cloud.AndroidCloudSyncWriter
+import com.health.friday.sync.cloud.CloudSyncMutation
+import com.health.friday.sync.cloud.toCloudSyncPayload
 import com.health.friday.util.DayRange
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -11,7 +15,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 
 class WaterRepository(
     private val waterDao: WaterDao,
-    private val healthConnectRepository: HealthConnectRepository
+    private val healthConnectRepository: HealthConnectRepository,
+    private val cloudSyncWriter: AndroidCloudSyncWriter? = null
 ) {
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -40,27 +45,38 @@ class WaterRepository(
         amountMl: Int,
         timestamp: Long = System.currentTimeMillis()
     ): Long {
+        val entry = WaterEntry(
+            amountMl = amountMl,
+            timestamp = timestamp
+        )
 
-        val entry =
-            WaterEntry(
-                amountMl = amountMl,
-                timestamp = timestamp
-            )
+        val writer = cloudSyncWriter
 
-        val waterId =
+        val waterId = if (writer == null) {
             waterDao.insertWater(entry)
+        } else {
+            writer.upsert(
+                entityType = CloudSyncEntityTypes.WATER_ENTRY,
+                entityId = entry.syncId
+            ) { hlc ->
+                val stamped = entry.copy(syncHlc = hlc)
+                val id = waterDao.insertWater(stamped)
+
+                CloudSyncMutation(
+                    value = id,
+                    payload = stamped.toCloudSyncPayload()
+                )
+            }
+        }
 
         try {
-
             healthConnectRepository.writeWater(
                 waterId = waterId,
                 amountMl = amountMl,
                 timestamp = timestamp
             )
-
         } catch (_: Exception) {
-            // Keep FRIDAY's local entry if Health Connect
-            // is temporarily unavailable.
+            // Keep FRIDAY's local entry if Health Connect is temporarily unavailable.
         }
 
         return waterId
@@ -82,15 +98,23 @@ class WaterRepository(
     suspend fun deleteWater(
         entry: WaterEntry
     ) {
+        val writer = cloudSyncWriter
 
-        waterDao.deleteWater(entry)
+        if (writer == null) {
+            waterDao.deleteWater(entry)
+        } else {
+            writer.delete(
+                entityType = CloudSyncEntityTypes.WATER_ENTRY,
+                entityId = entry.syncId
+            ) {
+                waterDao.deleteWater(entry)
+            }
+        }
 
         try {
-
             healthConnectRepository.deleteWater(
                 waterId = entry.id
             )
-
         } catch (_: Exception) {
             // Local FRIDAY deletion remains successful.
         }

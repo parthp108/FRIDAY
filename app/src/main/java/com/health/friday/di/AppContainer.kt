@@ -66,6 +66,7 @@ import com.health.friday.voice.pipeline.SileroVadEngine
 import com.health.friday.voice.pipeline.StreamingAsrEngine
 import com.health.friday.voice.pipeline.WakewordEngine
 import com.health.friday.bridge.DeviceIdentity
+import com.health.friday.sync.cloud.AndroidCloudSyncWriter
 import com.health.friday.sync.cloud.AndroidHybridLogicalClock
 import com.health.friday.spotify.SpotifyAuth
 
@@ -78,6 +79,14 @@ class AppContainer(private val context: Context) {
             database = database,
             dao = database.cloudSyncDao(),
             nodeId = deviceIdentity.deviceId
+        )
+    }
+    val cloudSyncWriter by lazy {
+        AndroidCloudSyncWriter(
+            database = database,
+            dao = database.cloudSyncDao(),
+            clock = cloudSyncClock,
+            deviceId = deviceIdentity.deviceId
         )
     }
     val settingsRepository by lazy { SettingsRepository(context) }
@@ -96,12 +105,12 @@ class AppContainer(private val context: Context) {
 
     val nutritionProvider by lazy { LocalNutritionProvider(context) }
     val foodCalibrationEngine by lazy { FoodCalibrationEngine(database.foodCalibrationDao()) }
-    val nutritionRepository by lazy { NutritionRepository(database.mealDao(), nutritionProvider, healthConnectRepository, foodCalibrationEngine) }
-    val waterRepository by lazy { WaterRepository(database.waterDao(), healthConnectRepository) }
-    val todoRepository by lazy { TodoRepository(database.todoDao()) }
-    val goalRepository by lazy { GoalRepository(database.goalDao()) }
+    val nutritionRepository by lazy { NutritionRepository(database.mealDao(), nutritionProvider, healthConnectRepository, foodCalibrationEngine, cloudSyncWriter) }
+    val waterRepository by lazy { WaterRepository(database.waterDao(), healthConnectRepository, cloudSyncWriter) }
+    val todoRepository by lazy { TodoRepository(database.todoDao(), cloudSyncWriter) }
+    val goalRepository by lazy { GoalRepository(database.goalDao(), cloudSyncWriter) }
     val embedder by lazy { FridayEmbedder(context) }
-    val journalRepository by lazy { JournalRepository(database.journalDao(), embedder) }
+    val journalRepository by lazy { JournalRepository(database.journalDao(), embedder, cloudSyncWriter) }
 
     val chatRepository by lazy { ChatRepository(database.chatConversationDao(), database.chatMessageDao()) }
     val reminderScheduler by lazy { ReminderScheduler(context) }

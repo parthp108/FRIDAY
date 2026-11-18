@@ -105,6 +105,7 @@ interface CloudSyncDao {
         """
         DELETE FROM cloud_sync_outbox
         WHERE status = 'UPLOADED'
+        AND operationType != 'DELETE'
         AND uploadedAtMs < :olderThanMs
         """
     )

@@ -35,50 +35,59 @@ class AndroidHybridLogicalClock(
      */
     suspend fun now(): HlcTimestamp {
         return database.withTransaction {
-            val state = dao.getClockState()
-            val physicalTime = wallClockMs()
-
-            require(physicalTime >= 0L) {
-                "System clock returned a negative timestamp"
-            }
-
-            val next = when {
-                state == null -> {
-                    HlcTimestamp(
-                        wallMs = physicalTime,
-                        counter = 0,
-                        nodeId = nodeId
-                    )
-                }
-
-                physicalTime > state.lastWallMs -> {
-                    HlcTimestamp(
-                        wallMs = physicalTime,
-                        counter = 0,
-                        nodeId = nodeId
-                    )
-                }
-
-                state.lastCounter >= MAX_COUNTER -> {
-                    HlcTimestamp(
-                        wallMs = state.lastWallMs + 1,
-                        counter = 0,
-                        nodeId = nodeId
-                    )
-                }
-
-                else -> {
-                    HlcTimestamp(
-                        wallMs = state.lastWallMs,
-                        counter = state.lastCounter + 1,
-                        nodeId = nodeId
-                    )
-                }
-            }
-
-            save(next)
-            next
+            nextInTransaction()
         }
+    }
+
+    /**
+     * Must be called inside an existing Room transaction.
+     * The caller's transaction must also contain the entity write
+     * and corresponding outbox insertion.
+     */
+    internal suspend fun nextInTransaction(): HlcTimestamp {
+        val state = dao.getClockState()
+        val physicalTime = wallClockMs()
+
+        require(physicalTime >= 0L) {
+            "System clock returned a negative timestamp"
+        }
+
+        val next = when {
+            state == null -> {
+                HlcTimestamp(
+                    wallMs = physicalTime,
+                    counter = 0,
+                    nodeId = nodeId
+                )
+            }
+
+            physicalTime > state.lastWallMs -> {
+                HlcTimestamp(
+                    wallMs = physicalTime,
+                    counter = 0,
+                    nodeId = nodeId
+                )
+            }
+
+            state.lastCounter >= MAX_COUNTER -> {
+                HlcTimestamp(
+                    wallMs = state.lastWallMs + 1,
+                    counter = 0,
+                    nodeId = nodeId
+                )
+            }
+
+            else -> {
+                HlcTimestamp(
+                    wallMs = state.lastWallMs,
+                    counter = state.lastCounter + 1,
+                    nodeId = nodeId
+                )
+            }
+        }
+
+        save(next)
+        return next
     }
 
     /**
