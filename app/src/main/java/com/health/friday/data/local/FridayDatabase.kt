@@ -172,6 +172,46 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+private val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+
+        val tables = listOf(
+            "meals",
+            "water_entries",
+            "todo_items",
+            "goals",
+            "journal_entries"
+        )
+
+        for (table in tables) {
+            db.execSQL(
+                "ALTER TABLE $table ADD COLUMN syncId TEXT NOT NULL DEFAULT ''"
+            )
+
+            db.execSQL(
+                "ALTER TABLE $table ADD COLUMN syncHlc TEXT"
+            )
+
+            // Give every existing record its own cloud identity.
+            db.execSQL(
+                """
+                UPDATE $table
+                SET syncId = lower(hex(randomblob(16)))
+                WHERE syncId = ''
+                """.trimIndent()
+            )
+
+            db.execSQL(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS
+                index_${table}_syncId
+                ON $table(syncId)
+                """.trimIndent()
+            )
+        }
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -181,7 +221,7 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
         MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
         CloudSyncCursorEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -218,7 +258,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_11_12,
                         MIGRATION_12_13,
                         MIGRATION_13_14,
-                        MIGRATION_14_15
+                        MIGRATION_14_15,
+                        MIGRATION_15_16
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()
