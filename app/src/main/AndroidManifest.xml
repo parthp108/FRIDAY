@@ -331,6 +331,11 @@
         </activity-alias>
 
         <activity
+            android:name=".sync.drive.DriveConnectionActivity"
+            android:exported="false"
+            android:label="Google Drive Test" />
+
+        <activity
             android:name=".StartupActivity"
             android:exported="true"
             android:label="@string/app_name"

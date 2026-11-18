@@ -12,6 +12,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.health.friday.desktop.sync.drive.DesktopDriveTest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import javax.swing.JFileChooser
 
 @Composable
 fun DesktopSettingsScreen(
@@ -25,7 +30,90 @@ fun DesktopSettingsScreen(
     var localModelName by remember { mutableStateOf(selectedLocalModel) }
     var localLlmEnabled by remember { mutableStateOf(true) }
 
+    val scope = rememberCoroutineScope()
+    var driveTestRunning by remember { mutableStateOf(false) }
+    var driveTestStatus by remember {
+        mutableStateOf("Not connected")
+    }
+
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        // CARD 0: GOOGLE DRIVE CONNECTION
+        item {
+            Surface(
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "Google Drive Connection",
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+
+                    Text(
+                        "Connect this Windows installation to the same FRIDAY Drive folder used by Android.",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp
+                    )
+
+                    Button(
+                        enabled = !driveTestRunning,
+                        onClick = {
+                            val chooser = JFileChooser().apply {
+                                dialogTitle = "Select Google Desktop OAuth credentials"
+                                fileSelectionMode = JFileChooser.FILES_ONLY
+                            }
+
+                            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                                val credentialsFile = chooser.selectedFile
+
+                                driveTestRunning = true
+                                driveTestStatus = "Opening Google authorization..."
+
+                                scope.launch {
+                                    val result = runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            DesktopDriveTest.run(credentialsFile)
+                                        }
+                                    }
+
+                                    driveTestStatus = result.fold(
+                                        onSuccess = { "DRIVE TEST PASSED\n\n$it" },
+                                        onFailure = {
+                                            val detail = it.localizedMessage ?: it.toString()
+                                            "DRIVE TEST FAILED\n\n$detail"
+                                        }
+                                    )
+
+                                    driveTestRunning = false
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF0284C7)
+                        )
+                    ) {
+                        Text(
+                            if (driveTestRunning) "Testing..." else "Connect & Run Drive Test"
+                        )
+                    }
+
+                    Text(
+                        driveTestStatus,
+                        color = if (driveTestStatus.startsWith("DRIVE TEST PASSED"))
+                            Color(0xFF4ADE80)
+                        else
+                            Color(0xFFCBD5E1),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
         // CARD 1: AI ENGINE & LLM CONFIGURATION
         item {
             Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {

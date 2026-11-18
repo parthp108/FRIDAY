@@ -47,6 +47,8 @@ import com.health.friday.ui.theme.FridayMuted
 import com.health.friday.ui.theme.FridayOrange
 import com.health.friday.ui.theme.FridayText
 import kotlinx.coroutines.launch
+import android.content.Intent
+import com.health.friday.sync.drive.DriveConnectionActivity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,6 +83,56 @@ fun SettingsScreen(
                 title = "Settings",
                 subtitle = "App Configuration & Alarm Telemetry"
             )
+        }
+
+        // Google Drive Sync Stage 1 Card
+        item {
+            val context = LocalContext.current
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = FridayCard
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Google Drive Sync",
+                        color = FridayCyan,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = "Connect FRIDAY to Google Drive and test file upload/download.",
+                        color = FridayMuted,
+                        fontSize = 13.sp
+                    )
+
+                    Button(
+                        onClick = {
+                            context.startActivity(
+                                Intent(
+                                    context,
+                                    DriveConnectionActivity::class.java
+                                )
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = FridayCyan,
+                            contentColor = FridayBackground
+                        )
+                    ) {
+                        Text("Configure Drive")
+                    }
+                }
+            }
         }
 
         // Scheduled Alarms Card

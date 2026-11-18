@@ -94,13 +94,34 @@ tasks.withType<Jar> {
     exclude("**/desktop.ini")
 }
 
-// Kill running FRIDAY.exe instances before packaging so Windows releases file locks (excluding Ollama)
-tasks.matching { it.name == "createDistributable" }.configureEach {
-    doFirst {
+// Automatically kill any running Desktop process (FRIDAY.exe or java process holding desktop build files)
+// BEFORE any compilation, packaging, or run task starts so Windows releases file locks.
+val killRunningDesktopProcess = tasks.register("killRunningDesktopProcess") {
+    doLast {
         runCatching {
-            ProcessBuilder("powershell", "-Command", "Get-Process | Where-Object { \$_.Path -and (\$_.Path -like '*FRIDAY\\desktop\\build\\compose\\binaries*' -and \$_.ProcessName -ne 'ollama') } | Stop-Process -Force").start().waitFor()
+            val script = """
+                Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                    (${'$'}_.ProcessName -eq 'FRIDAY' -or ${'$'}_.ProcessName -eq 'java' -or ${'$'}_.ProcessName -eq 'javaw') -and
+                    (${'$'}_.ProcessName -ne 'ollama') -and
+                    ((${'$'}_.Path -and ${'$'}_.Path -like '*FRIDAY*') -or (${'$'}_.CommandLine -and ${'$'}_.CommandLine -like '*friday*'))
+                } | Stop-Process -Force -ErrorAction SilentlyContinue
+            """.trimIndent()
+            ProcessBuilder("powershell", "-NoProfile", "-Command", script).start().waitFor()
         }
     }
+}
+
+tasks.matching {
+    it.name != "killRunningDesktopProcess" && (
+        it.name.startsWith("compile") ||
+        it.name.startsWith("package") ||
+        it.name.contains("Distributable") ||
+        it.name.contains("Run") ||
+        it.name == "run"
+    )
+}.configureEach {
+    mustRunAfter(killRunningDesktopProcess)
+    dependsOn(killRunningDesktopProcess)
 }
 
 // Configure Android Studio's default `desktopRun` task so clicking Run in IDE compiles, updates FRIDAY.exe, launches it, and finishes immediately!

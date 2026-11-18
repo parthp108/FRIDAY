@@ -83,6 +83,7 @@ dependencies {
 
     // Google ML Kit (On-Device Text Recognition)
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
+    implementation("com.google.android.gms:play-services-auth:22.0.0")
 
     // Room
     implementation(libs.androidx.room.runtime)
