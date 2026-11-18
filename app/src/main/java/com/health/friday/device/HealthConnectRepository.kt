@@ -150,6 +150,15 @@ class HealthConnectRepository(
         return historyReadPermission in getGrantedPermissions()
     }
 
+    fun obtainHealthConnectClient(): HealthConnectClient? {
+        if (!isAvailable()) return null
+        return try {
+            healthConnectClient
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private val healthConnectClient: HealthConnectClient by lazy {
         HealthConnectClient.getOrCreate(
             appContext,
@@ -843,33 +852,16 @@ class HealthConnectRepository(
         start: Instant,
         end: Instant
     ): Long? {
-        val response = try {
-            healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = StepsRecord::class,
+        return try {
+            val res = healthConnectClient.aggregate(
+                AggregateRequest(
+                    metrics = setOf(StepsRecord.COUNT_TOTAL),
                     timeRangeFilter = TimeRangeFilter.between(start, end)
                 )
             )
+            res[StepsRecord.COUNT_TOTAL]
         } catch (_: Exception) {
-            return null
-        }
-
-        if (response.records.isEmpty()) return 0L
-
-        val recordsByOrigin =
-            response.records.groupBy { it.metadata.dataOrigin.packageName }
-
-        val preferredRecords = recordsByOrigin.entries.firstOrNull { (pkg, _) ->
-            pkg.contains("shealth", ignoreCase = true) ||
-                pkg.contains("samsung", ignoreCase = true)
-        }?.value
-
-        return if (!preferredRecords.isNullOrEmpty()) {
-            preferredRecords.sumOf { it.count }
-        } else {
-            recordsByOrigin.values
-                .maxOfOrNull { records -> records.sumOf { it.count } }
-                ?: 0L
+            null
         }
     }
 

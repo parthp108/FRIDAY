@@ -14,6 +14,12 @@ data class CloudSyncMutation<T>(
     val payload: JsonObject
 )
 
+data class CloudSyncBatchMutation(
+    val entityType: String,
+    val entityId: String,
+    val mutation: suspend (hlc: String) -> JsonObject
+)
+
 class AndroidCloudSyncWriter(
     private val database: FridayDatabase,
     private val dao: CloudSyncDao,
@@ -54,6 +60,39 @@ class AndroidCloudSyncWriter(
 
             insertOperation(operation)
             result.value
+        }
+    }
+
+    /**
+     * Batch upsert inside a single Room transaction.
+     * Executes all mutations and outbox writes, then calls afterBatch.
+     */
+    suspend fun upsertBatch(
+        mutations: List<CloudSyncBatchMutation>,
+        afterBatch: suspend () -> Unit = {}
+    ) {
+        database.withTransaction {
+            mutations.forEach { item ->
+                require(item.entityType.isNotBlank())
+                require(item.entityId.isNotBlank())
+
+                val timestamp = clock.nextInTransaction()
+                val payload = item.mutation(timestamp.encode())
+
+                val operation = SyncOperation.newUpsert(
+                    deviceId = deviceId,
+                    entityType = item.entityType,
+                    entityId = item.entityId,
+                    hlc = timestamp.encode(),
+                    createdAtMs = timestamp.wallMs,
+                    payload = payload
+                )
+
+                insertOperation(operation)
+            }
+
+            // Save the page/checkpoint in the same transaction.
+            afterBatch()
         }
     }
 

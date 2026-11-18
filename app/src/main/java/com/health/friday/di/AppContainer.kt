@@ -66,6 +66,7 @@ import com.health.friday.voice.pipeline.SileroVadEngine
 import com.health.friday.voice.pipeline.StreamingAsrEngine
 import com.health.friday.voice.pipeline.WakewordEngine
 import com.health.friday.bridge.DeviceIdentity
+import com.health.friday.device.HealthConnectArchiveSyncer
 import com.health.friday.sync.cloud.AndroidCloudSyncWriter
 import com.health.friday.sync.cloud.AndroidHybridLogicalClock
 import com.health.friday.spotify.SpotifyAuth
@@ -87,6 +88,14 @@ class AppContainer(private val context: Context) {
             dao = database.cloudSyncDao(),
             clock = cloudSyncClock,
             deviceId = deviceIdentity.deviceId
+        )
+    }
+    val healthConnectArchiveSyncer by lazy {
+        HealthConnectArchiveSyncer(
+            healthConnectRepo = healthConnectRepository,
+            archiveDao = database.healthConnectArchiveDao(),
+            cloudSyncWriter = cloudSyncWriter,
+            sourceDeviceId = deviceIdentity.deviceId
         )
     }
     val settingsRepository by lazy { SettingsRepository(context) }
