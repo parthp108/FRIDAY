@@ -125,7 +125,15 @@ class AppContainer(private val context: Context) {
     val actionRecorder by lazy { ActionRecorder(actionLogDao) }
 
     val signalsBuilder by lazy {
-        SignalsBuilder(signalsDao, database.mealDao(), database.waterDao(), database.todoDao(), healthConnectRepository, usageRepository)
+        SignalsBuilder(
+            signalsDao,
+            database.mealDao(),
+            database.waterDao(),
+            database.todoDao(),
+            healthConnectRepository,
+            usageRepository,
+            cloudSyncWriter
+        )
     }
 
     val nudgePolicy by lazy { NudgePolicy(proactiveDao) }

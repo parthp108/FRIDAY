@@ -8,6 +8,7 @@ object CloudSyncEntityTypes {
     const val TODO = "todo"
     const val GOAL = "goal"
     const val JOURNAL_ENTRY = "journal_entry"
+    const val DAILY_SIGNALS = "daily_signals"
 }
 
 @Serializable
@@ -56,4 +57,34 @@ data class JournalSyncPayload(
     val text: String,
     val feedback: String?,
     val createdAt: Long
+)
+
+@Serializable
+data class DailySignalsSyncPayload(
+    val date: String,
+    val sourceDeviceId: String,
+
+    val sleepMinutes: Int?,
+    val sleepStartEpoch: Long?,
+    val sleepEndEpoch: Long?,
+    val steps: Int?,
+    val restingHr: Int?,
+
+    val kcal: Int?,
+    val proteinGrams: Float?,
+    val carbsGrams: Float?,
+    val fatGrams: Float?,
+    val waterMl: Int?,
+    val lastMealHour: Float?,
+
+    val screenTimeMinutes: Int?,
+    val tasksCompleted: Int,
+    val tasksPending: Int,
+    val moodScore: Int?,
+    val workoutMinutes: Int,
+
+    val activeCaloriesKcal: Int?,
+    val distanceMeters: Double?,
+    val hrvMs: Double?,
+    val spo2Percent: Double?
 )

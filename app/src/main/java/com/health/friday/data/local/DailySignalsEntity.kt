@@ -25,5 +25,6 @@ data class DailySignalsEntity(
     val activeCaloriesKcal: Int? = null,
     val distanceMeters: Double? = null,
     val hrvMs: Double? = null,
-    val spo2Percent: Double? = null
+    val spo2Percent: Double? = null,
+    val syncHlc: String? = null
 )

@@ -73,3 +73,34 @@ fun JournalEntry.toCloudSyncPayload(): JsonObject =
             createdAt = createdAt
         )
     ).jsonObject
+
+fun DailySignalsEntity.toCloudSyncPayload(
+    sourceDeviceId: String
+): JsonObject =
+    syncPayloadJson.encodeToJsonElement(
+        DailySignalsSyncPayload.serializer(),
+        DailySignalsSyncPayload(
+            date = date,
+            sourceDeviceId = sourceDeviceId,
+            sleepMinutes = sleepMinutes,
+            sleepStartEpoch = sleepStartEpoch,
+            sleepEndEpoch = sleepEndEpoch,
+            steps = steps,
+            restingHr = restingHr,
+            kcal = kcal,
+            proteinGrams = proteinGrams,
+            carbsGrams = carbsGrams,
+            fatGrams = fatGrams,
+            waterMl = waterMl,
+            lastMealHour = lastMealHour,
+            screenTimeMinutes = screenTimeMinutes,
+            tasksCompleted = tasksCompleted,
+            tasksPending = tasksPending,
+            moodScore = moodScore,
+            workoutMinutes = workoutMinutes,
+            activeCaloriesKcal = activeCaloriesKcal,
+            distanceMeters = distanceMeters,
+            hrvMs = hrvMs,
+            spo2Percent = spo2Percent
+        )
+    ).jsonObject

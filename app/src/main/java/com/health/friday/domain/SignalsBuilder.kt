@@ -7,6 +7,10 @@ import com.health.friday.data.local.TodoDao
 import com.health.friday.data.local.WaterDao
 import com.health.friday.device.DeviceUsageRepository
 import com.health.friday.device.HealthConnectRepository
+import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
+import com.health.friday.sync.cloud.AndroidCloudSyncWriter
+import com.health.friday.sync.cloud.CloudSyncMutation
+import com.health.friday.sync.cloud.toCloudSyncPayload
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -37,7 +41,8 @@ class SignalsBuilder(
     private val waterDao: WaterDao,
     private val todoDao: TodoDao,
     private val healthConnectRepo: HealthConnectRepository,
-    private val usageRepo: DeviceUsageRepository
+    private val usageRepo: DeviceUsageRepository,
+    private val cloudSyncWriter: AndroidCloudSyncWriter? = null
 ) {
 
     // Builds read-modify-write a row, so they must not overlap.
@@ -157,25 +162,58 @@ class SignalsBuilder(
 
         if (healthAccess && inHealthWindow) {
             try {
-                val summary = healthConnectRepo.getTodayHealth()
+                // Query the actual selected day for historical steps and sleep.
+                val dayHealth = healthConnectRepo.getDayHealth(start)
 
-                if (summary.steps > 0) steps = summary.steps.toInt()
-                if (summary.sleepMinutes > 0) sleepMinutes = summary.sleepMinutes.toInt()
-                if (summary.heartRate != null) {
-                    restingHr = summary.heartRate.toInt()
-                } else if (summary.restingHeartRate != null) {
-                    restingHr = summary.restingHeartRate.toInt()
+                if (dayHealth != null) {
+                    steps = dayHealth.steps.toInt()
+                    sleepMinutes = dayHealth.sleepMinutes.toInt()
+                    sleepStart = dayHealth.sleepStartMillis
+                    sleepEnd = dayHealth.sleepEndMillis
                 }
 
-                if (summary.activeTimeMinutes > 0) workoutMinutes = summary.activeTimeMinutes.toInt()
-                if (summary.activeCaloriesKcal != null && summary.activeCaloriesKcal > 0) activeCaloriesKcal = summary.activeCaloriesKcal
-                if (summary.distanceMeters != null && summary.distanceMeters > 0.0) distanceMeters = summary.distanceMeters
-                if (summary.hrvRmssdMs != null) hrvMs = summary.hrvRmssdMs
-                if (summary.oxygenSaturationPercentage != null) spo2Percent = summary.oxygenSaturationPercentage
+                // Full summary is currently available through today's query.
+                if (isToday) {
+                    val summary = healthConnectRepo.getTodayHealth()
+
+                    if (summary.steps > 0) {
+                        steps = summary.steps.toInt()
+                    }
+
+                    if (summary.sleepMinutes > 0) {
+                        sleepMinutes = summary.sleepMinutes.toInt()
+                    }
+
+                    summary.restingHeartRate?.let {
+                        restingHr = it.toInt()
+                    } ?: summary.heartRate?.let {
+                        restingHr = it.toInt()
+                    }
+
+                    if (summary.activeTimeMinutes > 0) {
+                        workoutMinutes = summary.activeTimeMinutes.toInt()
+                    }
+
+                    summary.activeCaloriesKcal?.let {
+                        if (it > 0) activeCaloriesKcal = it
+                    }
+
+                    summary.distanceMeters?.let {
+                        if (it > 0.0) distanceMeters = it
+                    }
+
+                    summary.hrvRmssdMs?.let {
+                        hrvMs = it
+                    }
+
+                    summary.oxygenSaturationPercentage?.let {
+                        spo2Percent = it
+                    }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // Keep whatever was recorded before.
+                // Keep previously recorded values.
             }
         }
 
@@ -196,30 +234,58 @@ class SignalsBuilder(
             }
         }
 
-        signalsDao.insertOrUpdate(
-            DailySignalsEntity(
-                date = dateStr,
-                sleepMinutes = sleepMinutes,
-                sleepStartEpoch = sleepStart,
-                sleepEndEpoch = sleepEnd,
-                steps = steps,
-                restingHr = restingHr,
-                kcal = if (hasMeals) meals.sumOf { it.calories } else null,
-                proteinGrams = if (hasMeals) meals.sumOf { it.protein }.toFloat() else null,
-                carbsGrams = if (hasMeals) meals.sumOf { it.carbohydrates }.toFloat() else null,
-                fatGrams = if (hasMeals) meals.sumOf { it.fat }.toFloat() else null,
-                waterMl = if (waterEntries.isNotEmpty()) waterEntries.sumOf { it.amountMl } else null,
-                lastMealHour = lastMealHour,
-                screenTimeMinutes = screenTime,
-                tasksCompleted = tasksCompleted,
-                tasksPending = tasksPending,
-                moodScore = existing?.moodScore,
-                workoutMinutes = workoutMinutes,
-                activeCaloriesKcal = activeCaloriesKcal,
-                distanceMeters = distanceMeters,
-                hrvMs = hrvMs,
-                spo2Percent = spo2Percent
-            )
+        val signal = DailySignalsEntity(
+            date = dateStr,
+            sleepMinutes = sleepMinutes,
+            sleepStartEpoch = sleepStart,
+            sleepEndEpoch = sleepEnd,
+            steps = steps,
+            restingHr = restingHr,
+            kcal = if (hasMeals) meals.sumOf { it.calories } else null,
+            proteinGrams = if (hasMeals) meals.sumOf { it.protein }.toFloat() else null,
+            carbsGrams = if (hasMeals) meals.sumOf { it.carbohydrates }.toFloat() else null,
+            fatGrams = if (hasMeals) meals.sumOf { it.fat }.toFloat() else null,
+            waterMl = if (waterEntries.isNotEmpty()) {
+                waterEntries.sumOf { it.amountMl }
+            } else null,
+            lastMealHour = lastMealHour,
+            screenTimeMinutes = screenTime,
+            tasksCompleted = tasksCompleted,
+            tasksPending = tasksPending,
+            moodScore = existing?.moodScore,
+            workoutMinutes = workoutMinutes,
+            activeCaloriesKcal = activeCaloriesKcal,
+            distanceMeters = distanceMeters,
+            hrvMs = hrvMs,
+            spo2Percent = spo2Percent
         )
+
+        // Existing data must also be enqueued once after the migration.
+        val needsSync =
+            existing == null ||
+            existing.copy(syncHlc = null) != signal ||
+            (cloudSyncWriter != null && existing.syncHlc == null)
+
+        if (needsSync) {
+            val writer = cloudSyncWriter
+
+            if (writer == null) {
+                signalsDao.insertOrUpdate(signal)
+            } else {
+                writer.upsert(
+                    entityType = CloudSyncEntityTypes.DAILY_SIGNALS,
+                    entityId = "${writer.deviceId}:$dateStr"
+                ) { hlc ->
+                    val stamped = signal.copy(syncHlc = hlc)
+
+                    signalsDao.insertOrUpdate(stamped)
+
+                    CloudSyncMutation(
+                        value = Unit,
+                        payload = stamped.toCloudSyncPayload(writer.deviceId)
+                    )
+                }
+            }
+        }
     }
 }

@@ -18,7 +18,7 @@ class AndroidCloudSyncWriter(
     private val database: FridayDatabase,
     private val dao: CloudSyncDao,
     private val clock: AndroidHybridLogicalClock,
-    private val deviceId: String
+    val deviceId: String
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
