@@ -16,12 +16,12 @@ import androidx.health.connect.client.time.TimeRangeFilter
 import com.health.friday.data.local.HealthConnectArchiveDao
 import com.health.friday.data.local.HealthConnectSyncStateEntity
 import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
+import com.health.friday.shared.sync.cloud.SyncOperationType
 import com.health.friday.sync.cloud.AndroidCloudSyncWriter
 import com.health.friday.sync.cloud.CloudSyncBatchMutation
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import java.time.Duration
 import java.time.Instant
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.reflect.KClass
 
 private data class RecordSyncTarget<T : Record>(
@@ -53,9 +53,13 @@ class HealthConnectArchiveSyncer(
         for (target in targets) {
             val readPerm = HealthPermission.getReadPermission(target.kclass)
             if (readPerm in granted) {
-                runCatching {
+                try {
                     val count = syncTarget(target)
                     results[target.adapter.recordType] = count
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Log per-target failure without blocking other independent permitted types
                 }
             }
         }
@@ -74,13 +78,21 @@ class HealthConnectArchiveSyncer(
 
         var state = archiveDao.getSyncState(typeName) ?: HealthConnectSyncStateEntity(recordType = typeName)
 
-        // 1. Ensure Changes Token exists BEFORE initial baseline import
+        // 1. Ensure Changes Token exists BEFORE starting baseline import
         if (state.changesToken.isNullOrBlank()) {
             val token = try {
                 client.getChangesToken(ChangesTokenRequest(recordTypes = setOf(kclass)))
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 null
             }
+
+            if (token.isNullOrBlank()) {
+                // Do not proceed with baseline import without a valid Changes Token
+                return 0
+            }
+
             state = state.copy(changesToken = token)
             archiveDao.saveSyncState(state)
         }
@@ -108,11 +120,19 @@ class HealthConnectArchiveSyncer(
         adapter: HealthRecordAdapter<T>,
         initialState: HealthConnectSyncStateEntity
     ): Int {
-        val nowMs = System.currentTimeMillis()
-        val nowInstant = Instant.ofEpochMilli(nowMs)
+        val baselineToMs = initialState.baselineStartedAtMs ?: System.currentTimeMillis()
 
-        val fromMs = initialState.baselineFromEpochMs ?: nowInstant.minus(Duration.ofDays(30)).toEpochMilli()
-        val startTime = Instant.ofEpochMilli(fromMs)
+        val hasHistoryPermission = healthConnectRepo.supportsHistoryRead() &&
+                healthConnectRepo.hasHistoryReadAccess()
+
+        val baselineFromMs = initialState.baselineFromEpochMs ?: if (hasHistoryPermission) {
+            Instant.EPOCH.toEpochMilli()
+        } else {
+            baselineToMs - Duration.ofDays(30).toMillis()
+        }
+
+        val startTime = Instant.ofEpochMilli(baselineFromMs)
+        val endTime = Instant.ofEpochMilli(baselineToMs)
 
         var pageToken = initialState.baselinePageToken
         var totalImported = 0
@@ -120,13 +140,15 @@ class HealthConnectArchiveSyncer(
         while (true) {
             val req = ReadRecordsRequest(
                 recordType = kclass,
-                timeRangeFilter = TimeRangeFilter.between(startTime, nowInstant),
+                timeRangeFilter = TimeRangeFilter.between(startTime, endTime),
                 pageToken = pageToken,
                 pageSize = 200
             )
 
             val res = try {
                 client.readRecords(req)
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 break
             }
@@ -140,7 +162,8 @@ class HealthConnectArchiveSyncer(
                 batchMutations.add(
                     CloudSyncBatchMutation(
                         entityType = CloudSyncEntityTypes.HEALTH_RECORD,
-                        entityId = archiveEntity.archiveId
+                        entityId = archiveEntity.archiveId,
+                        operationType = SyncOperationType.UPSERT
                     ) { hlc ->
                         val stamped = archiveEntity.copy(syncHlc = hlc)
                         archiveDao.upsertRecord(stamped)
@@ -151,10 +174,11 @@ class HealthConnectArchiveSyncer(
 
             val nextPageToken = res.pageToken
             val isComplete = nextPageToken.isNullOrBlank()
+            val nowMs = System.currentTimeMillis()
 
             val updatedState = initialState.copy(
-                baselineFromEpochMs = fromMs,
-                baselineStartedAtMs = initialState.baselineStartedAtMs ?: nowMs,
+                baselineFromEpochMs = baselineFromMs,
+                baselineStartedAtMs = baselineToMs,
                 baselinePageToken = if (isComplete) null else nextPageToken,
                 baselineComplete = isComplete,
                 baselineCompletedAtMs = if (isComplete) nowMs else null,
@@ -186,15 +210,10 @@ class HealthConnectArchiveSyncer(
         while (!token.isNullOrBlank()) {
             val changesRes: ChangesResponse = try {
                 client.getChanges(token)
-            } catch (_: Exception) {
-                // Token expired or invalid: reset baseline and re-sync
-                val resetState = currentState.copy(
-                    changesToken = null,
-                    baselineComplete = false,
-                    baselinePageToken = null
-                )
-                archiveDao.saveSyncState(resetState)
-                return 0
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                throw e
             }
 
             if (changesRes.changesTokenExpired) {
@@ -219,7 +238,8 @@ class HealthConnectArchiveSyncer(
                             batchMutations.add(
                                 CloudSyncBatchMutation(
                                     entityType = CloudSyncEntityTypes.HEALTH_RECORD,
-                                    entityId = archiveEntity.archiveId
+                                    entityId = archiveEntity.archiveId,
+                                    operationType = SyncOperationType.UPSERT
                                 ) { hlc ->
                                     val stamped = archiveEntity.copy(syncHlc = hlc)
                                     archiveDao.upsertRecord(stamped)
@@ -235,15 +255,16 @@ class HealthConnectArchiveSyncer(
                         batchMutations.add(
                             CloudSyncBatchMutation(
                                 entityType = CloudSyncEntityTypes.HEALTH_RECORD,
-                                entityId = archiveId
+                                entityId = archiveId,
+                                operationType = SyncOperationType.DELETE
                             ) { hlc ->
-                                archiveDao.markDeleted(sourceDeviceId, adapter.recordType, recordId, hlc)
-                                buildJsonObject {
-                                    put("archiveId", archiveId)
-                                    put("recordType", adapter.recordType)
-                                    put("recordId", recordId)
-                                    put("isDeleted", true)
-                                }
+                                archiveDao.markDeleted(
+                                    sourceDeviceId,
+                                    adapter.recordType,
+                                    recordId,
+                                    hlc
+                                )
+                                null
                             }
                         )
                     }

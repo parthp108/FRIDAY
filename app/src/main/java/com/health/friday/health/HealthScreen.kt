@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.health.connect.client.PermissionController
 import com.health.friday.device.BodySummary
+import com.health.friday.device.HealthConnectArchiveSyncer
 import com.health.friday.device.HealthConnectRepository
 import com.health.friday.device.HealthSummary
 import com.health.friday.device.SleepStageSummary
@@ -59,6 +60,7 @@ import java.util.Locale
 @Composable
 fun HealthScreen(
     repository: HealthConnectRepository? = null,
+    syncer: HealthConnectArchiveSyncer? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -246,6 +248,7 @@ fun HealthScreen(
             isRefreshing = true
             healthSummary = healthRepo.getTodayHealth()
             hasFullAccess = healthRepo.hasFullAccess()
+            syncer?.syncAllRecordTypes()
             isRefreshing = false
         }
     }

@@ -220,6 +220,9 @@ class MainActivity : ComponentActivity() {
                     healthConnectRepository =
                         appContainer.healthConnectRepository,
 
+                    healthConnectArchiveSyncer =
+                        appContainer.healthConnectArchiveSyncer,
+
                     todoRepository =
                         appContainer.todoRepository,
 
@@ -274,6 +277,9 @@ fun FridayApp(
 
     healthConnectRepository:
     HealthConnectRepository,
+
+    healthConnectArchiveSyncer:
+    com.health.friday.device.HealthConnectArchiveSyncer? = null,
 
     todoRepository:
     TodoRepository,
@@ -786,6 +792,8 @@ fun FridayApp(
                     HealthScreen(
                         repository =
                             healthConnectRepository,
+                        syncer =
+                            healthConnectArchiveSyncer,
                         modifier =
                             Modifier.padding(
                                 innerPadding

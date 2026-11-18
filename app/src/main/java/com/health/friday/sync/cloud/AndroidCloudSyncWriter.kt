@@ -5,6 +5,7 @@ import com.health.friday.data.local.CloudSyncDao
 import com.health.friday.data.local.CloudSyncOutboxEntity
 import com.health.friday.data.local.FridayDatabase
 import com.health.friday.shared.sync.cloud.SyncOperation
+import com.health.friday.shared.sync.cloud.SyncOperationType
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -17,7 +18,8 @@ data class CloudSyncMutation<T>(
 data class CloudSyncBatchMutation(
     val entityType: String,
     val entityId: String,
-    val mutation: suspend (hlc: String) -> JsonObject
+    val operationType: SyncOperationType = SyncOperationType.UPSERT,
+    val mutation: suspend (hlc: String) -> JsonObject?
 )
 
 class AndroidCloudSyncWriter(
@@ -64,7 +66,7 @@ class AndroidCloudSyncWriter(
     }
 
     /**
-     * Batch upsert inside a single Room transaction.
+     * Batch upsert or delete inside a single Room transaction.
      * Executes all mutations and outbox writes, then calls afterBatch.
      */
     suspend fun upsertBatch(
@@ -77,16 +79,35 @@ class AndroidCloudSyncWriter(
                 require(item.entityId.isNotBlank())
 
                 val timestamp = clock.nextInTransaction()
-                val payload = item.mutation(timestamp.encode())
+                val encodedHlc = timestamp.encode()
+                val payload = item.mutation(encodedHlc)
 
-                val operation = SyncOperation.newUpsert(
-                    deviceId = deviceId,
-                    entityType = item.entityType,
-                    entityId = item.entityId,
-                    hlc = timestamp.encode(),
-                    createdAtMs = timestamp.wallMs,
-                    payload = payload
-                )
+                val operation = when (item.operationType) {
+                    SyncOperationType.UPSERT -> SyncOperation.newUpsert(
+                        deviceId = deviceId,
+                        entityType = item.entityType,
+                        entityId = item.entityId,
+                        hlc = encodedHlc,
+                        createdAtMs = timestamp.wallMs,
+                        payload = requireNotNull(payload) {
+                            "UPSERT requires a payload"
+                        }
+                    )
+
+                    SyncOperationType.DELETE -> {
+                        require(payload == null) {
+                            "DELETE must not contain a payload"
+                        }
+
+                        SyncOperation.newDelete(
+                            deviceId = deviceId,
+                            entityType = item.entityType,
+                            entityId = item.entityId,
+                            hlc = encodedHlc,
+                            createdAtMs = timestamp.wallMs
+                        )
+                    }
+                }
 
                 insertOperation(operation)
             }
