@@ -302,6 +302,29 @@ private val MIGRATION_18_19 = object : Migration(18, 19) {
     }
 }
 
+private val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        addColumnIfMissing(
+            db,
+            "health_connect_sync_state",
+            "baselineToEpochMs",
+            "INTEGER"
+        )
+
+        // Preserve the fixed upper bound used by the previous importer
+        // for baselines that were already in progress.
+        db.execSQL(
+            """
+            UPDATE health_connect_sync_state
+            SET baselineToEpochMs = baselineStartedAtMs
+            WHERE baselineToEpochMs IS NULL
+              AND baselineComplete = 0
+              AND baselineFromEpochMs IS NOT NULL
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -312,7 +335,7 @@ private val MIGRATION_18_19 = object : Migration(18, 19) {
         CloudSyncCursorEntity::class, CloudSyncClockEntity::class,
         HealthRecordArchiveEntity::class, HealthConnectSyncStateEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -354,7 +377,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_15_16,
                         MIGRATION_16_17,
                         MIGRATION_17_18,
-                        MIGRATION_18_19
+                        MIGRATION_18_19,
+                        MIGRATION_19_20
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()

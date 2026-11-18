@@ -99,6 +99,10 @@ fun HealthScreen(
         mutableStateOf(false)
     }
 
+    var archiveSyncStatus by remember {
+        mutableStateOf<String?>(null)
+    }
+
     var selectedTab by remember {
         mutableIntStateOf(0)
     }
@@ -246,10 +250,37 @@ fun HealthScreen(
     val onRefresh: () -> Unit = {
         coroutineScope.launch {
             isRefreshing = true
-            healthSummary = healthRepo.getTodayHealth()
-            hasFullAccess = healthRepo.hasFullAccess()
-            syncer?.syncAllRecordTypes()
-            isRefreshing = false
+            archiveSyncStatus = null
+
+            try {
+                healthSummary = healthRepo.getTodayHealth()
+                hasFullAccess = healthRepo.hasFullAccess()
+
+                val report = syncer?.syncAllRecordTypes()
+
+                archiveSyncStatus = report?.let {
+                    val totalImported = it.importedByRecordType.values.sum()
+                    val importedText = "Archived $totalImported Health Connect records."
+
+                    val failuresText = it.failuresByRecordType.entries.joinToString(
+                        separator = "\n"
+                    ) { (type, error) ->
+                        "$type: $error"
+                    }
+
+                    if (failuresText.isBlank()) {
+                        importedText
+                    } else {
+                        "$importedText\nSome record types failed:\n$failuresText"
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                archiveSyncStatus = "Health refresh failed: ${e.message ?: "Unknown error"}"
+            } finally {
+                isRefreshing = false
+            }
         }
     }
 
@@ -267,6 +298,16 @@ fun HealthScreen(
         ) {
             item(key = "header") {
                 ScreenHeader(title = "Health", subtitle = "Live Body Telemetry")
+            }
+
+            archiveSyncStatus?.let { status ->
+                item(key = "archive_sync_status") {
+                    InfoCard(
+                        title = "Health Archive Sync",
+                        body = status,
+                        accent = FridayBlue
+                    )
+                }
             }
 
             if (supportsHistoryRead && !hasHistoryReadAccess) {

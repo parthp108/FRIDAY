@@ -44,6 +44,8 @@ object HeartRateRecordAdapter : HealthRecordAdapter<HeartRateRecord> {
     override fun serializePayload(record: HeartRateRecord): JsonObject = buildJsonObject {
         put("startTime", record.startTime.toEpochMilli())
         put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
         put("samples", buildJsonArray {
             record.samples.forEach { sample ->
                 add(buildJsonObject {
@@ -64,6 +66,8 @@ object SleepSessionRecordAdapter : HealthRecordAdapter<SleepSessionRecord> {
     override fun serializePayload(record: SleepSessionRecord): JsonObject = buildJsonObject {
         put("startTime", record.startTime.toEpochMilli())
         put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
         record.title?.let { put("title", it) }
         record.notes?.let { put("notes", it) }
         put("stages", buildJsonArray {

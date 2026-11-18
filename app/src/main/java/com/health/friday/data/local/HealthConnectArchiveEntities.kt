@@ -67,6 +67,7 @@ data class HealthConnectSyncStateEntity(
     // Initial historical import checkpoint.
     val baselinePageToken: String? = null,
     val baselineFromEpochMs: Long? = null,
+    val baselineToEpochMs: Long? = null,
     val baselineStartedAtMs: Long? = null,
     val baselineCompletedAtMs: Long? = null,
 
