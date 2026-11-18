@@ -77,6 +77,14 @@ fun HealthScreen(
         mutableStateOf(false)
     }
 
+    var supportsHistoryRead by remember {
+        mutableStateOf(false)
+    }
+
+    var hasHistoryReadAccess by remember {
+        mutableStateOf(false)
+    }
+
     var healthSummary by remember {
         mutableStateOf<HealthSummary?>(null)
     }
@@ -113,6 +121,20 @@ fun HealthScreen(
             }
         }
 
+    val historyPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = PermissionController.createRequestPermissionResultContract()
+        ) { grantedPermissions ->
+            coroutineScope.launch {
+                hasHistoryReadAccess =
+                    healthRepo.historyReadPermission in grantedPermissions
+
+                if (hasHistoryReadAccess) {
+                    healthSummary = healthRepo.getTodayHealth()
+                }
+            }
+        }
+
     LaunchedEffect(healthRepo) {
         val available = healthRepo.isAvailable()
         isAvailable = available
@@ -122,6 +144,9 @@ fun HealthScreen(
             hasFullAccess = false
             return@LaunchedEffect
         }
+
+        supportsHistoryRead = healthRepo.supportsHistoryRead()
+        hasHistoryReadAccess = healthRepo.hasHistoryReadAccess()
 
         val granted = healthRepo.getGrantedPermissions()
         hasAccess = granted.isNotEmpty()
@@ -239,6 +264,21 @@ fun HealthScreen(
         ) {
             item(key = "header") {
                 ScreenHeader(title = "Health", subtitle = "Live Body Telemetry")
+            }
+
+            if (supportsHistoryRead && !hasHistoryReadAccess) {
+                item(key = "history_permission") {
+                    InfoCard(
+                        title = "Enable Full Health History",
+                        body = "Allow FRIDAY to read health records older than the default 30-day access window. This permission is optional and controlled by you.",
+                        accent = FridayOrange,
+                        modifier = Modifier.clickable {
+                            historyPermissionLauncher.launch(
+                                setOf(healthRepo.historyReadPermission)
+                            )
+                        }
+                    )
+                }
             }
 
             if (!hasFullAccess) {

@@ -166,10 +166,15 @@ class SignalsBuilder(
                 val dayHealth = healthConnectRepo.getDayHealth(start)
 
                 if (dayHealth != null) {
-                    steps = dayHealth.steps.toInt()
-                    sleepMinutes = dayHealth.sleepMinutes.toInt()
-                    sleepStart = dayHealth.sleepStartMillis
-                    sleepEnd = dayHealth.sleepEndMillis
+                    dayHealth.steps?.let {
+                        steps = it.toInt()
+                    }
+
+                    if (dayHealth.sleepMinutes != null) {
+                        sleepMinutes = dayHealth.sleepMinutes.toInt()
+                        sleepStart = dayHealth.sleepStartMillis
+                        sleepEnd = dayHealth.sleepEndMillis
+                    }
                 }
 
                 // Full summary is currently available through today's query.

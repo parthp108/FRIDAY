@@ -3,6 +3,7 @@ package com.health.friday.device
 import android.content.Context
 import android.content.Intent
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
@@ -115,8 +116,8 @@ data class HealthSummary(
 
 // One calendar day of steps and sleep, used for the daily life snapshot.
 data class DayHealth(
-    val steps: Long,
-    val sleepMinutes: Long,
+    val steps: Long?,
+    val sleepMinutes: Long?,
     val sleepStartMillis: Long?,
     val sleepEndMillis: Long?
 )
@@ -129,6 +130,25 @@ class HealthConnectRepository(
 
     private val providerPackageName =
         "com.google.android.apps.healthdata"
+
+    val historyReadPermission: String =
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+
+    fun supportsHistoryRead(): Boolean {
+        if (!isAvailable()) return false
+
+        return try {
+            healthConnectClient.features.getFeatureStatus(
+                HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY
+            ) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    suspend fun hasHistoryReadAccess(): Boolean {
+        return historyReadPermission in getGrantedPermissions()
+    }
 
     private val healthConnectClient: HealthConnectClient by lazy {
         HealthConnectClient.getOrCreate(
@@ -275,7 +295,7 @@ class HealthConnectRepository(
         val endOfDay = today.plusDays(1).atStartOfDay(zone).toInstant()
 
         // 1. STEPS (Deduplicated with Samsung Health / Band as primary source)
-        val steps = getTodaySteps(startOfDay, endOfDay)
+        val steps = getTodaySteps(startOfDay, endOfDay) ?: 0L
 
         // 2. DISTANCE
         val distanceMeters = try {
@@ -801,39 +821,28 @@ class HealthConnectRepository(
         }
     }
 
-    private suspend fun hasHealthReadAccess(): Boolean {
-        if (!isAvailable()) {
-            return false
-        }
-        return try {
-            val granted =
-                healthConnectClient
-                    .permissionController
-                    .getGrantedPermissions()
-            granted.contains(
-                HealthPermission.getReadPermission(
-                    StepsRecord::class
+    private suspend fun getLatestHeartRate(
+        start: Instant,
+        end: Instant
+    ): Long? {
+        val response =
+            healthConnectClient.readRecords(
+                ReadRecordsRequest(
+                    recordType = HeartRateRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(start, end)
                 )
-            ) &&
-                    granted.contains(
-                        HealthPermission.getReadPermission(
-                            HeartRateRecord::class
-                        )
-                    ) &&
-                    granted.contains(
-                        HealthPermission.getReadPermission(
-                            SleepSessionRecord::class
-                        )
-                    )
-        } catch (e: Exception) {
-            false
-        }
+            )
+        val latestSample =
+            response.records
+                .flatMap { record -> record.samples }
+                .maxByOrNull { sample -> sample.time }
+        return latestSample?.beatsPerMinute
     }
 
     private suspend fun getTodaySteps(
         start: Instant,
         end: Instant
-    ): Long {
+    ): Long? {
         val response = try {
             healthConnectClient.readRecords(
                 ReadRecordsRequest(
@@ -842,152 +851,90 @@ class HealthConnectRepository(
                 )
             )
         } catch (_: Exception) {
-            return 0L
-        }
-
-        if (response.records.isEmpty()) {
-            return 0L
-        }
-
-        // Group steps by data origin package name to prevent double counting across providers
-        val recordsByOrigin = response.records.groupBy { it.metadata.dataOrigin.packageName }
-
-        // Primary package candidates for Samsung Health / Band:
-        val shealthRecords = recordsByOrigin.entries.firstOrNull { (pkg, _) ->
-            pkg.contains("shealth", ignoreCase = true) || pkg.contains("samsung", ignoreCase = true)
-        }?.value
-
-        if (!shealthRecords.isNullOrEmpty()) {
-            // Primary source is Samsung Health / Smart Band
-            return shealthRecords.sumOf { it.count }
-        }
-
-        // If Samsung Health is not writing steps, pick the single package origin with the highest step total
-        return recordsByOrigin.map { (_, records) ->
-            records.sumOf { it.count }
-        }.maxOrNull() ?: 0L
-    }
-
-    private suspend fun getLatestHeartRate(
-        start: Instant,
-        end: Instant
-    ): Long? {
-        val response =
-            healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType =
-                        HeartRateRecord::class,
-                    timeRangeFilter =
-                        TimeRangeFilter.between(
-                            start,
-                            end
-                        )
-                )
-            )
-        val latestSample =
-            response.records
-                .flatMap { record ->
-                    record.samples
-                }
-                .maxByOrNull { sample ->
-                    sample.time
-                }
-        return latestSample?.beatsPerMinute
-    }
-
-    private suspend fun getTodaySleepMinutes(
-        start: Instant,
-        end: Instant
-    ): Long {
-        val response =
-            healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType =
-                        SleepSessionRecord::class,
-                    timeRangeFilter =
-                        TimeRangeFilter.between(
-                            start,
-                            end
-                        )
-                )
-            )
-        var totalMinutes = 0L
-        for (session in response.records) {
-            val sessionStart =
-                if (session.startTime.isBefore(start)) {
-                    start
-                } else {
-                    session.startTime
-                }
-            val sessionEnd =
-                if (session.endTime.isAfter(end)) {
-                    end
-                } else {
-                    session.endTime
-                }
-            if (sessionEnd.isAfter(sessionStart)) {
-                totalMinutes +=
-                    Duration.between(
-                        sessionStart,
-                        sessionEnd
-                    ).toMinutes()
-            }
-        }
-        return totalMinutes
-    }
-
-    /**
-     * Steps and sleep for one calendar day (dayStartMillis = local midnight).
-     *
-     * Sleep is credited to the day you WAKE UP: a 23:00 to 07:00 night counts
-     * fully toward the morning's date, not split across midnight.
-     * Returns null when Health Connect read access is missing.
-     */
-    suspend fun getDayHealth(dayStartMillis: Long): DayHealth? {
-        if (!hasHealthReadAccess()) {
             return null
         }
+
+        if (response.records.isEmpty()) return 0L
+
+        val recordsByOrigin =
+            response.records.groupBy { it.metadata.dataOrigin.packageName }
+
+        val preferredRecords = recordsByOrigin.entries.firstOrNull { (pkg, _) ->
+            pkg.contains("shealth", ignoreCase = true) ||
+                pkg.contains("samsung", ignoreCase = true)
+        }?.value
+
+        return if (!preferredRecords.isNullOrEmpty()) {
+            preferredRecords.sumOf { it.count }
+        } else {
+            recordsByOrigin.values
+                .maxOfOrNull { records -> records.sumOf { it.count } }
+                ?: 0L
+        }
+    }
+
+    suspend fun getDayHealth(dayStartMillis: Long): DayHealth? {
+        if (!isAvailable()) return null
+
+        val granted = getGrantedPermissions()
+
+        val canReadSteps =
+            HealthPermission.getReadPermission(StepsRecord::class) in granted
+
+        val canReadSleep =
+            HealthPermission.getReadPermission(SleepSessionRecord::class) in granted
+
+        if (!canReadSteps && !canReadSleep) return null
+
         val zone = ZoneId.systemDefault()
         val startOfDay = Instant.ofEpochMilli(dayStartMillis)
-        val endOfDay =
-            startOfDay.atZone(zone)
-                .toLocalDate()
-                .plusDays(1)
-                .atStartOfDay(zone)
-                .toInstant()
 
-        val steps = getTodaySteps(startOfDay, endOfDay)
-        val response =
-            healthConnectClient.readRecords(
-                ReadRecordsRequest(
-                    recordType = SleepSessionRecord::class,
-                    timeRangeFilter =
-                        TimeRangeFilter.between(
+        val endOfDay = startOfDay.atZone(zone)
+            .toLocalDate()
+            .plusDays(1)
+            .atStartOfDay(zone)
+            .toInstant()
+
+        val steps = if (canReadSteps) {
+            getTodaySteps(startOfDay, endOfDay)
+        } else {
+            null
+        }
+
+        val sessions = if (canReadSleep) {
+            try {
+                healthConnectClient.readRecords(
+                    ReadRecordsRequest(
+                        recordType = SleepSessionRecord::class,
+                        timeRangeFilter = TimeRangeFilter.between(
                             startOfDay.minus(Duration.ofHours(18)),
                             endOfDay
                         )
-                )
-            )
-        val sessions =
-            response.records.filter { session ->
-                !session.endTime.isBefore(startOfDay) &&
+                    )
+                ).records.filter { session ->
+                    !session.endTime.isBefore(startOfDay) &&
                         session.endTime.isBefore(endOfDay)
+                }
+            } catch (_: Exception) {
+                null
             }
-        var sleepMinutes = 0L
-        for (session in sessions) {
-            sleepMinutes +=
-                Duration.between(
-                    session.startTime,
-                    session.endTime
-                ).toMinutes()
+        } else {
+            null
         }
+
+        val sleepMinutes = sessions?.sumOf {
+            Duration.between(it.startTime, it.endTime).toMinutes()
+        }
+
         return DayHealth(
             steps = steps,
             sleepMinutes = sleepMinutes,
-            sleepStartMillis =
-                sessions.minOfOrNull { it.startTime }?.toEpochMilli(),
-            sleepEndMillis =
-                sessions.maxOfOrNull { it.endTime }?.toEpochMilli()
+            sleepStartMillis = sessions?.minOfOrNull {
+                it.startTime.toEpochMilli()
+            },
+            sleepEndMillis = sessions?.maxOfOrNull {
+                it.endTime.toEpochMilli()
+            }
         )
     }
 

@@ -73,6 +73,7 @@
 
     <!-- Health Connect Data -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
 
     <!-- Activity -->
     <uses-permission android:name="android.permission.health.READ_STEPS" />
