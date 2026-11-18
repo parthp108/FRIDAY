@@ -1,6 +1,7 @@
 package com.health.friday.settings
 
 import android.content.Context
+import com.health.friday.shared.FridayDefaults
 
 class SettingsRepository(
     context: Context
@@ -21,10 +22,7 @@ class SettingsRepository(
     }
 
     fun getModel(): String {
-
-        val model =
-            prefs.getString(KEY_MODEL, "")?.trim().orEmpty()
-
+        val model = prefs.getString(KEY_MODEL, "")?.trim().orEmpty()
         return if (model.isEmpty()) DEFAULT_MODEL else model
     }
 
@@ -32,12 +30,18 @@ class SettingsRepository(
         prefs.edit().putString(KEY_MODEL, model.trim()).apply()
     }
 
+    fun isLocalLlmEnabled(): Boolean {
+        return prefs.getBoolean(KEY_LOCAL_LLM, true)
+    }
+
+    fun saveLocalLlmEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_LOCAL_LLM, enabled).apply()
+    }
+
     companion object {
-
-        const val DEFAULT_MODEL = "gemini-3.5-flash-lite"
-
+        const val DEFAULT_MODEL = FridayDefaults.GEMINI_MODEL
         private const val KEY_API = "gemini_api_key"
-
         private const val KEY_MODEL = "gemini_model"
+        private const val KEY_LOCAL_LLM = "local_llm_enabled"
     }
 }

@@ -35,10 +35,11 @@ google-services.json
 # OS files
 .DS_Store
 Thumbs.db
-
-# Temporary files
-*.log
-*.tmp
-# SQLite temporary files
+desktop.ini
+**/desktop.ini
+*.bin
+*.db
 *.db-shm
 *.db-wal
+desktop_chat_history.json
+desktop_chat_sessions.json

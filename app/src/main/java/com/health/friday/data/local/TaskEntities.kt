@@ -15,6 +15,8 @@ data class TodoItem(
 
     val createdAt: Long = System.currentTimeMillis(),
 
+    val embeddingJson: String? = null,
+
     val completedAt: Long? = null,
 
     val dueAt: Long? = null
@@ -32,7 +34,9 @@ data class Goal(
 
     val isDone: Boolean = false,
 
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    val embeddingJson: String? = null
 )
 
 @Entity(tableName = "journal_entries")
@@ -45,5 +49,7 @@ data class JournalEntry(
 
     val feedback: String? = null,
 
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+
+    val embeddingJson: String? = null
 )

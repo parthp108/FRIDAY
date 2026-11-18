@@ -4,8 +4,12 @@ import com.health.friday.data.local.JournalDao
 import com.health.friday.data.local.JournalEntry
 import kotlinx.coroutines.flow.Flow
 
+import com.health.friday.memory.rag.FridayEmbedder
+import org.json.JSONArray
+
 class JournalRepository(
-    private val journalDao: JournalDao
+    private val journalDao: JournalDao,
+    private val embedder: FridayEmbedder
 ) {
 
     fun getEntries(): Flow<List<JournalEntry>> {
@@ -23,7 +27,15 @@ class JournalRepository(
             return null
         }
 
-        val entry = JournalEntry(text = cleanText)
+        embedder.initialize()
+        val embedding = embedder.embed(cleanText)
+        val embeddingJson = embedding?.let {
+            val array = JSONArray()
+            it.forEach { floatVal -> array.put(floatVal.toDouble()) }
+            array.toString()
+        }
+
+        val entry = JournalEntry(text = cleanText, embeddingJson = embeddingJson)
 
         val id = journalDao.insert(entry)
 

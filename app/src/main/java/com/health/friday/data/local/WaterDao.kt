@@ -15,6 +15,9 @@ interface WaterDao {
     @Delete
     suspend fun deleteWater(entry: WaterEntry)
 
+    @Query("SELECT * FROM water_entries WHERE id = :id")
+    suspend fun getWaterById(id: Long): WaterEntry?
+
     @Query("SELECT * FROM water_entries ORDER BY timestamp DESC")
     fun getAllWater(): Flow<List<WaterEntry>>
 

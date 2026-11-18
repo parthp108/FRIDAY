@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import com.health.friday.MainActivity
 import com.health.friday.R
 import com.health.friday.data.local.FridayDatabase
+import com.health.friday.proactive.ProactiveVoiceActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -74,6 +75,12 @@ class ReminderReceiver : BroadcastReceiver() {
             intent.getLongExtra(
                 EXTRA_REMINDER_ID,
                 -1L
+            )
+
+        val isPreAlert =
+            intent.getBooleanExtra(
+                EXTRA_IS_PRE_ALERT,
+                false
             )
 
         val database =
@@ -189,6 +196,22 @@ class ReminderReceiver : BroadcastReceiver() {
 
             notification
         )
+
+        // Launch Proactive Voice Turn ("Speak-Then-Listen" overlay)
+        val proactiveVoiceMessage = if (isPreAlert) {
+            "Hey boss, you have to start '$title' in 30 minutes!"
+        } else {
+            "Hey boss, it's time for '$title'!"
+        }
+
+        runCatching {
+            ProactiveVoiceActivity.launch(
+                context = context,
+                message = proactiveVoiceMessage,
+                nudgeType = if (isPreAlert) "reminder_pre_alert" else "reminder_due",
+                nudgeId = reminderId
+            )
+        }
 
         /*
          * One-time reminder:
@@ -320,6 +343,9 @@ class ReminderReceiver : BroadcastReceiver() {
 
         const val EXTRA_REMINDER_ID =
             "extra_reminder_id"
+
+        const val EXTRA_IS_PRE_ALERT =
+            "extra_is_pre_alert"
     }
 }
 

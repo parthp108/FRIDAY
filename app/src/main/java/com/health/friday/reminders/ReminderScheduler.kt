@@ -83,6 +83,31 @@ class ReminderScheduler(
                         PendingIntent.FLAG_IMMUTABLE
             )
 
+        // Schedule 30-minute Pre-Alert Voice Nudge
+        val preAlertMillis = triggerAtMillis - (30 * 60 * 1000)
+        if (preAlertMillis > System.currentTimeMillis()) {
+            val preIntent = Intent(context, ReminderReceiver::class.java).apply {
+                putExtra(ReminderReceiver.EXTRA_REMINDER_ID, reminderId)
+                putExtra(ReminderReceiver.EXTRA_TITLE, title)
+                putExtra(ReminderReceiver.EXTRA_MESSAGE, message)
+                putExtra(ReminderReceiver.EXTRA_REPEAT_DAILY, repeatDaily)
+                putExtra(ReminderReceiver.EXTRA_IS_PRE_ALERT, true)
+            }
+            val prePendingIntent = PendingIntent.getBroadcast(
+                context,
+                (reminderId * 100 + 30).toInt(),
+                preIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            runCatching {
+                if (canScheduleExactAlarms()) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, preAlertMillis, prePendingIntent)
+                } else {
+                    alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, preAlertMillis, prePendingIntent)
+                }
+            }
+        }
+
         return try {
 
             if (canScheduleExactAlarms()) {

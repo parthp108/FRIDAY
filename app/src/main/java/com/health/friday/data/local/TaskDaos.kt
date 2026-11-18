@@ -21,6 +21,9 @@ interface TodoDao {
 
     @Query("SELECT * FROM todo_items ORDER BY isDone ASC, createdAt DESC")
     fun getAll(): Flow<List<TodoItem>>
+
+    @Query("SELECT * FROM todo_items WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TodoItem?
 }
 
 @Dao
@@ -53,4 +56,7 @@ interface JournalDao {
 
     @Query("SELECT * FROM journal_entries ORDER BY createdAt DESC")
     fun getAll(): Flow<List<JournalEntry>>
+
+    @Query("SELECT * FROM journal_entries ORDER BY createdAt DESC")
+    suspend fun getAllNow(): List<JournalEntry>
 }

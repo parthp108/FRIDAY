@@ -39,7 +39,7 @@ class WaterRepository(
     suspend fun addWater(
         amountMl: Int,
         timestamp: Long = System.currentTimeMillis()
-    ) {
+    ): Long {
 
         val entry =
             WaterEntry(
@@ -62,6 +62,8 @@ class WaterRepository(
             // Keep FRIDAY's local entry if Health Connect
             // is temporarily unavailable.
         }
+
+        return waterId
     }
 
     suspend fun getEntriesBetween(
@@ -92,6 +94,16 @@ class WaterRepository(
         } catch (_: Exception) {
             // Local FRIDAY deletion remains successful.
         }
+    }
+
+    /** Removes a water entry by id. Returns false if it no longer exists. */
+    suspend fun deleteWaterById(id: Long): Boolean {
+
+        val entry = waterDao.getWaterById(id) ?: return false
+
+        deleteWater(entry)
+
+        return true
     }
 
     suspend fun getTodayTotalMl(): Int {

@@ -8,7 +8,6 @@ class AlarmRepository(
     private val scheduler: AlarmScheduler
 ) {
 
-
     fun getAlarms(): Flow<List<Alarm>> =
         alarmDao.getAll()
 
@@ -87,10 +86,7 @@ class AlarmRepository(
     suspend fun disableAlarm(
         alarm: Alarm
     ) {
-
-        scheduler.cancelAlarm(
-            alarmId = alarm.id
-        )
+        scheduler.cancelAlarm(alarm.id, alarm.title)
 
         alarmDao.update(
             alarm.copy(
@@ -102,13 +98,8 @@ class AlarmRepository(
     suspend fun deleteAlarm(
         alarm: Alarm
     ) {
-
-        scheduler.cancelAlarm(
-            alarmId = alarm.id
-        )
+        scheduler.cancelAlarm(alarm.id, alarm.title)
 
         alarmDao.delete(alarm)
     }
-
-
 }

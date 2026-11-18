@@ -1,0 +1,15 @@
+cmake_minimum_required(VERSION 3.22.1)
+
+project("friday_memory_manager")
+
+# Create the shared library from your C++ source
+add_library(
+        ${CMAKE_PROJECT_NAME}
+        SHARED
+        MemoryManager.cpp)
+
+# Link Android standard libraries (like logging)
+target_link_libraries(
+        ${CMAKE_PROJECT_NAME}
+        android
+        log)

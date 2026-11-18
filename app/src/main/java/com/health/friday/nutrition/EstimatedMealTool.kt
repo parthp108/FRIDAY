@@ -1,5 +1,7 @@
 package com.health.friday.nutrition
 
+import com.health.friday.actions.ActionInverse
+import com.health.friday.actions.ActionRecorder
 import com.health.friday.ai.AiTool
 import com.health.friday.ai.AiToolParameter
 import com.health.friday.util.DateParser
@@ -24,15 +26,15 @@ private fun typicalHour(
 }
 
 class LogEstimatedMealTool(
-    private val repository: NutritionRepository
+    private val repository: NutritionRepository,
+    private val actionRecorder: ActionRecorder
 ) : AiTool {
 
     override val name = "log_estimated_meal"
 
     override val description =
         "Logs one food or dish with nutrition values YOU estimate, for anything " +
-                "log_meal does not recognise. log_meal only knows: " +
-                "${FoodParser().supportedFoodNames.joinToString(", ")}. " +
+                "log_meal does not recognise, or that log_meal reported as skipped. " +
                 "Call once per dish. Values are for the whole portion the user " +
                 "ate. It is saved marked as estimated."
 
@@ -150,7 +152,7 @@ class LogEstimatedMealTool(
         val displayName =
             dishName.replaceFirstChar { it.uppercase() }
 
-        repository.logEstimated(
+        val logged = repository.logEstimated(
             name = displayName,
             mealType = mealType,
             calories = calories,
@@ -158,6 +160,12 @@ class LogEstimatedMealTool(
             carbohydrates = carbs,
             fat = fat,
             timestamp = timestamp
+        )
+
+        actionRecorder.setInverse(
+            summary = "Logged estimate: $displayName, ${logged.calories} kcal",
+            inverseTool = ActionInverse.DELETE_MEALS,
+            inversePayloadJson = ActionInverse.mealsPayload(listOf(logged.mealId))
         )
 
         val dayFormat =
@@ -180,11 +188,19 @@ class LogEstimatedMealTool(
 
         val totalLabel = if (isToday) "Today so far" else "That day"
 
+        val adjustNote =
+            if (abs(logged.calibrationMultiplier - 1.0) > 0.02) {
+                " Adjusted x${String.format(Locale.US, "%.2f", logged.calibrationMultiplier)} from your past corrections."
+            } else {
+                ""
+            }
+
         return "Logged as $mealType$dayLabel (ESTIMATE, not measured): " +
-                "$displayName: $calories kcal " +
-                "(P ${protein.roundToInt()}g, " +
-                "C ${carbs.roundToInt()}g, " +
-                "F ${fat.roundToInt()}g). " +
-                "$totalLabel: $dayTotal of ${NutritionGoals.CALORIES} kcal."
+                "$displayName: ${logged.calories} kcal " +
+                "(P ${logged.protein.roundToInt()}g, " +
+                "C ${logged.carbohydrates.roundToInt()}g, " +
+                "F ${logged.fat.roundToInt()}g). " +
+                "$totalLabel: $dayTotal of ${NutritionGoals.CALORIES} kcal." +
+                adjustNote
     }
 }

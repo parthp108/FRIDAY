@@ -1,0 +1,152 @@
+plugins {
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.compose.multiplatform)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+}
+
+kotlin {
+    jvm("desktop")
+
+    sourceSets {
+        val desktopMain by getting {
+            dependencies {
+                implementation(project(":shared"))
+                implementation(compose.desktop.currentOs)
+                implementation(compose.material3)
+                implementation(compose.materialIconsExtended)
+                implementation(compose.foundation)
+                implementation(compose.ui)
+                implementation(libs.kotlinx.coroutines.swing)
+                implementation(libs.kotlinx.serialization.json)
+                implementation(libs.ktor.client.cio)
+                implementation(libs.ktor.client.websockets)
+                implementation(libs.ktor.server.core)
+                implementation(libs.ktor.server.cio)
+                implementation(libs.ktor.server.websockets)
+                implementation("org.slf4j:slf4j-simple:2.0.12")
+                implementation("cafe.adriel.voyager:voyager-navigator:1.0.0")
+                implementation("cafe.adriel.voyager:voyager-screenmodel:1.0.0")
+                implementation("cafe.adriel.voyager:voyager-tab-navigator:1.0.0")
+                implementation("cafe.adriel.voyager:voyager-koin:1.0.0")
+                implementation("io.insert-koin:koin-core:3.5.3")
+                implementation("com.github.kwhat:jnativehook:2.2.2")
+            }
+        }
+    }
+}
+
+compose.desktop {
+    application {
+        mainClass = "com.health.friday.desktop.MainKt"
+        javaHome = File("C:/Users/parth/.jdks/jbr-25.0.4.1").takeIf { it.exists() }?.absolutePath ?: System.getenv("JAVA_HOME")
+        jvmArgs += listOf(
+            "--enable-native-access=ALL-UNNAMED",
+            "-XX:+UseZGC",
+            "-XX:+ZGenerational",
+            "-XX:ZAllocationSpikeTolerance=5",
+            "-Xmx2G",
+            "-Xms256M",
+            "-Dskiko.renderApi=DIRECT3D"
+        )
+
+        nativeDistributions {
+            targetFormats(
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Msi,
+                org.jetbrains.compose.desktop.application.dsl.TargetFormat.Deb
+            )
+            packageName = "FRIDAY"
+            packageVersion = "2.0.0"
+            description = "FRIDAY ECo System Daemon & Control Center"
+            copyright = "© 2026 Health Ecosystem"
+            vendor = "FRIDAY"
+
+            windows {
+                menuGroup = "FRIDAY"
+                shortcut = true
+                menu = true
+                upgradeUuid = "8c878992-b5a8-36ac-f783-6c6ce63e4f4a"
+            }
+        }
+    }
+}
+
+tasks.withType<JavaExec> {
+    jvmArgs(
+        "--enable-native-access=ALL-UNNAMED",
+        "-XX:+UseZGC",
+        "-XX:+ZGenerational",
+        "-XX:ZAllocationSpikeTolerance=5",
+        "-Xmx2G",
+        "-Xms256M",
+        "-Dskiko.renderApi=DIRECT3D"
+    )
+}
+
+tasks.withType<ProcessResources> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("**/desktop.ini")
+}
+
+tasks.withType<Jar> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    exclude("**/desktop.ini")
+}
+
+// Kill running FRIDAY.exe instances before packaging so Windows releases file locks (excluding Ollama)
+tasks.matching { it.name == "createDistributable" }.configureEach {
+    doFirst {
+        runCatching {
+            ProcessBuilder("powershell", "-Command", "Get-Process | Where-Object { \$_.Path -and (\$_.Path -like '*FRIDAY\\desktop\\build\\compose\\binaries*' -and \$_.ProcessName -ne 'ollama') } | Stop-Process -Force").start().waitFor()
+        }
+    }
+}
+
+// Configure Android Studio's default `desktopRun` task so clicking Run in IDE compiles, updates FRIDAY.exe, launches it, and finishes immediately!
+tasks.matching { it.name == "desktopRun" || it.name == "run" || it.name == "runDistributable" }.configureEach {
+    dependsOn("createDistributable")
+    actions.clear() // Clear blocking JavaExec task so Android Studio build completes exit code 0!
+
+    val exeProvider = layout.buildDirectory.file("compose/binaries/main/app/FRIDAY/FRIDAY.exe")
+    inputs.file(exeProvider)
+
+    doLast {
+        val exeFile = exeProvider.get().asFile
+        if (exeFile.exists()) {
+            val appDir = exeFile.parentFile
+            println("=== Build complete! Launching updated FRIDAY.exe on laptop ===")
+            ProcessBuilder("cmd", "/c", "start", "", exeFile.name)
+                .directory(appDir)
+                .start()
+        } else {
+            println("Error: FRIDAY.exe was not found at ${exeFile.absolutePath}")
+        }
+    }
+}
+
+abstract class LaunchExeTask : DefaultTask() {
+    @get:InputFile
+    abstract val exeFile: RegularFileProperty
+
+    @TaskAction
+    fun launch() {
+        val source = exeFile.get().asFile
+        if (source.exists()) {
+            val appDir = source.parentFile
+            println("=== Build complete! Launching updated FRIDAY.exe from ${appDir.absolutePath} ===")
+            ProcessBuilder("cmd", "/c", "start", "", source.name)
+                .directory(appDir)
+                .start()
+        } else {
+            println("Error: FRIDAY.exe was not found at ${source.absolutePath}")
+        }
+    }
+}
+
+tasks.register<LaunchExeTask>("runExe") {
+    group = "application"
+    description = "Builds/updates the native FRIDAY.exe executable and launches it on your laptop"
+    dependsOn("createDistributable")
+    exeFile.set(layout.buildDirectory.file("compose/binaries/main/app/FRIDAY/FRIDAY.exe"))
+}

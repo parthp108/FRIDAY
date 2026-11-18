@@ -24,3 +24,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "FRIDAY"
 include(":app")
+include(":shared")
+include(":desktop")

@@ -1,4 +1,3 @@
-
 package com.health.friday.data.local
 
 import android.content.Context
@@ -9,105 +8,126 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.health.friday.alarms.Alarm
 import com.health.friday.alarms.AlarmDao
+import com.health.friday.memory.MemoryFactDao
+import com.health.friday.memory.MemoryFactEntity
+import com.health.friday.nutrition.calibration.FoodCalibrationDao
+import com.health.friday.nutrition.calibration.FoodCalibrationEntity
+import com.health.friday.proactive.NudgeHistoryEntity
+import com.health.friday.proactive.ProactiveDao
+import com.health.friday.proactive.ProtocolEntity
 
-private val MIGRATION_2_3 = object : Migration(2, 3) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "ALTER TABLE meals ADD COLUMN isEstimated INTEGER NOT NULL DEFAULT 0"
-        )
+/*
+ * DATABASE VERSION RULES
+ *
+ * 1. The version number only ever goes UP. Never lower it.
+ * 2. Every time an @Entity changes (new column, new table), bump the version
+ *    AND add a Migration below AND register it in addMigrations(...).
+ * 3. Migrations here are written to be safe to run on a database that already
+ *    has the change (IF NOT EXISTS / column check), because the phone may hold
+ *    a database created by any recent build.
+ */
+
+private fun columnExists(
+    db: SupportSQLiteDatabase,
+    table: String,
+    column: String
+): Boolean {
+    db.query("PRAGMA table_info($table)").use { cursor ->
+        val nameIndex = cursor.getColumnIndex("name")
+
+        while (cursor.moveToNext()) {
+            if (cursor.getString(nameIndex) == column) {
+                return true
+            }
+        }
+    }
+
+    return false
+}
+
+private fun addColumnIfMissing(
+    db: SupportSQLiteDatabase,
+    table: String,
+    column: String,
+    definition: String
+) {
+    if (!columnExists(db, table, column)) {
+        db.execSQL("ALTER TABLE $table ADD COLUMN $column $definition")
     }
 }
 
-private val MIGRATION_3_4 = object : Migration(3, 4) {
+private val MIGRATION_10_11 = object : Migration(10, 11) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
-            CREATE TABLE IF NOT EXISTS chat_conversations (
+            CREATE TABLE IF NOT EXISTS nudge_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                type TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                interacted INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS protocols (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
                 title TEXT NOT NULL,
-                createdAt INTEGER NOT NULL,
-                updatedAt INTEGER NOT NULL
-            )
-            """.trimIndent()
-        )
-
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS chat_messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                conversationId INTEGER NOT NULL,
-                role TEXT NOT NULL,
-                content TEXT NOT NULL,
-                createdAt INTEGER NOT NULL,
-                FOREIGN KEY(conversationId)
-                    REFERENCES chat_conversations(id)
-                    ON DELETE CASCADE
-            )
-            """.trimIndent()
-        )
-
-        db.execSQL(
-            """
-            CREATE INDEX IF NOT EXISTS index_chat_messages_conversationId
-            ON chat_messages(conversationId)
-            """.trimIndent()
-        )
-    }
-}
-
-private val MIGRATION_4_5 = object : Migration(4, 5) {
-    override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            """
-            CREATE TABLE IF NOT EXISTS reminders (
-                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                title TEXT NOT NULL,
-                timeMillis INTEGER NOT NULL,
-                enabled INTEGER NOT NULL,
-                repeatDaily INTEGER NOT NULL
+                triggerConditionJson TEXT NOT NULL,
+                actionTool TEXT NOT NULL,
+                actionPayloadJson TEXT NOT NULL,
+                autonomyLevel TEXT NOT NULL,
+                isEnabled INTEGER NOT NULL
             )
             """.trimIndent()
         )
     }
 }
 
-private val MIGRATION_5_6 = object : Migration(5, 6) {
+private val MIGRATION_11_12 = object : Migration(11, 12) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
             """
-            CREATE TABLE IF NOT EXISTS alarms (
+            CREATE TABLE IF NOT EXISTS memory_facts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                title TEXT NOT NULL,
-                timeMillis INTEGER NOT NULL,
-                enabled INTEGER NOT NULL,
-                repeatDaily INTEGER NOT NULL
+                fact TEXT NOT NULL,
+                createdAt INTEGER NOT NULL
             )
             """.trimIndent()
         )
     }
 }
 
-private val MIGRATION_6_7 = object : Migration(6, 7) {
+// Adds the semantic-search embedding column used by the journal / todo / goal RAG.
+private val MIGRATION_12_13 = object : Migration(12, 13) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "ALTER TABLE meals ADD COLUMN nutrientsJson TEXT NOT NULL DEFAULT '[]'"
-        )
+        addColumnIfMissing(db, "todo_items", "embeddingJson", "TEXT")
+        addColumnIfMissing(db, "goals", "embeddingJson", "TEXT")
+        addColumnIfMissing(db, "journal_entries", "embeddingJson", "TEXT")
+    }
+}
+
+private val MIGRATION_13_14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        addColumnIfMissing(db, "todo_items", "embeddingJson", "TEXT")
+        addColumnIfMissing(db, "goals", "embeddingJson", "TEXT")
+        addColumnIfMissing(db, "journal_entries", "embeddingJson", "TEXT")
+        addColumnIfMissing(db, "daily_signals", "activeCaloriesKcal", "INTEGER")
+        addColumnIfMissing(db, "daily_signals", "distanceMeters", "REAL")
+        addColumnIfMissing(db, "daily_signals", "hrvMs", "REAL")
+        addColumnIfMissing(db, "daily_signals", "spo2Percent", "REAL")
     }
 }
 
 @Database(
     entities = [
-        Meal::class,
-        WaterEntry::class,
-        Reminder::class,
-        Alarm::class,
-        TodoItem::class,
-        Goal::class,
-        JournalEntry::class,
-        ChatConversation::class,
-        ChatMessage::class
+        Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
+        TodoItem::class, Goal::class, JournalEntry::class, ChatConversation::class,
+        ChatMessage::class, ActionLogEntity::class, DailySignalsEntity::class,
+        FoodCalibrationEntity::class, NudgeHistoryEntity::class, ProtocolEntity::class,
+        MemoryFactEntity::class
     ],
-    version = 7,
+    version = 14,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -121,9 +141,13 @@ abstract class FridayDatabase : RoomDatabase() {
     abstract fun journalDao(): JournalDao
     abstract fun chatConversationDao(): ChatConversationDao
     abstract fun chatMessageDao(): ChatMessageDao
+    abstract fun actionLogDao(): ActionLogDao
+    abstract fun dailySignalsDao(): DailySignalsDao
+    abstract fun foodCalibrationDao(): FoodCalibrationDao
+    abstract fun proactiveDao(): ProactiveDao
+    abstract fun memoryFactDao(): MemoryFactDao
 
     companion object {
-
         @Volatile
         private var INSTANCE: FridayDatabase? = null
 
@@ -135,12 +159,12 @@ abstract class FridayDatabase : RoomDatabase() {
                     "friday_database"
                 )
                     .addMigrations(
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                        MIGRATION_6_7
+                        MIGRATION_10_11,
+                        MIGRATION_11_12,
+                        MIGRATION_12_13,
+                        MIGRATION_13_14
                     )
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { INSTANCE = it }
             }

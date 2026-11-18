@@ -4,6 +4,7 @@ interface AiClient {
 
     suspend fun sendMessage(
         messages: List<AiMessage>,
-        context: AiContext
+        context: AiContext,
+        onPartialResponse: ((String) -> Unit)? = null
     ): AiResponse
 }

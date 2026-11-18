@@ -13,14 +13,23 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.health.friday.ui.theme.FridayBackground
 import com.health.friday.ui.theme.FridayCyan
 import com.health.friday.ui.theme.FridayMuted
 import com.health.friday.ui.theme.FridayText
+import kotlinx.coroutines.delay
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun AlarmScreen(
@@ -28,6 +37,16 @@ fun AlarmScreen(
     onDismiss: () -> Unit,
     onSnooze: () -> Unit
 ) {
+    var currentTimeString by remember {
+        mutableStateOf(LocalTime.now().format(DateTimeFormatter.ofPattern("hh:mm a")))
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            currentTimeString = LocalTime.now().format(DateTimeFormatter.ofPattern("hh:mm a"))
+            delay(1000L)
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -45,18 +64,21 @@ fun AlarmScreen(
         Text(
             text = "ALARM",
             color = FridayCyan,
-            fontSize = 15.sp
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 2.sp
         )
 
         Spacer(
             modifier = Modifier
-                .height(18.dp)
+                .height(24.dp)
         )
 
         Text(
-            text = alarmTitle,
+            text = currentTimeString,
             color = FridayText,
-            fontSize = 32.sp
+            fontSize = 52.sp,
+            fontWeight = FontWeight.Bold
         )
 
         Spacer(
@@ -65,21 +87,22 @@ fun AlarmScreen(
         )
 
         Text(
-            text = "FRIDAY alarm",
-            color = FridayMuted,
-            fontSize = 14.sp
+            text = alarmTitle,
+            color = FridayCyan,
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Medium
         )
 
         Spacer(
             modifier = Modifier
-                .height(48.dp)
+                .height(64.dp)
         )
 
         Button(
             onClick = onDismiss,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(60.dp),
             colors =
                 ButtonDefaults.buttonColors(
                     containerColor =
@@ -91,34 +114,37 @@ fun AlarmScreen(
 
             Text(
                 text = "Dismiss",
-                fontSize = 17.sp
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
             )
         }
 
         Spacer(
             modifier = Modifier
-                .height(14.dp)
+                .height(16.dp)
         )
 
         Button(
             onClick = onSnooze,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(56.dp),
+                .height(60.dp),
             colors =
                 ButtonDefaults.buttonColors(
                     containerColor =
-                        FridayMuted,
+                        FridayMuted.copy(alpha = 0.3f),
                     contentColor =
-                        FridayBackground
+                        FridayText
                 )
         ) {
 
             Text(
                 text = "Snooze 10 minutes",
-                fontSize = 16.sp
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium
             )
         }
     }
 }
+
 

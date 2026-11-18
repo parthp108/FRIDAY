@@ -1,21 +1,37 @@
-
 package com.health.friday.alarms
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.provider.AlarmClock
-import java.util.Calendar
+import android.os.Build
 
 class AlarmScheduler(
     private val context: Context
 ) {
 
+    private val alarmManager: AlarmManager? get() = runCatching { context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager }.getOrNull()
+
     fun canScheduleExactAlarms(): Boolean {
-        return true
+        val mgr = alarmManager ?: return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            mgr.canScheduleExactAlarms()
+        } else {
+            true
+        }
     }
 
     fun openExactAlarmSettings() {
-        // The phone Clock app handles its own alarm permission/settings.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val intent = Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                // Ignore if device doesn't support this intent
+            }
+        }
     }
 
     fun scheduleAlarm(
@@ -25,141 +41,78 @@ class AlarmScheduler(
         repeatDaily: Boolean,
         requestCode: Int = alarmId.toInt()
     ): Boolean {
-
-        val target =
-            Calendar.getInstance().apply {
-                timeInMillis = triggerAtMillis
-            }
-
-        val hour =
-            target.get(Calendar.HOUR_OF_DAY)
-
-        val minute =
-            target.get(Calendar.MINUTE)
-
-        val clockIntent =
-            Intent(
-                AlarmClock.ACTION_SET_ALARM
-            ).apply {
-
-                putExtra(
-                    AlarmClock.EXTRA_HOUR,
-                    hour
-                )
-
-                putExtra(
-                    AlarmClock.EXTRA_MINUTES,
-                    minute
-                )
-
-                putExtra(
-                    AlarmClock.EXTRA_MESSAGE,
-                    title
-                )
-
-                putExtra(
-                    AlarmClock.EXTRA_SKIP_UI,
-                    true
-                )
-
-                if (repeatDaily) {
-                    putExtra(
-                        AlarmClock.EXTRA_DAYS,
-                        arrayListOf(
-                            Calendar.SUNDAY,
-                            Calendar.MONDAY,
-                            Calendar.TUESDAY,
-                            Calendar.WEDNESDAY,
-                            Calendar.THURSDAY,
-                            Calendar.FRIDAY,
-                            Calendar.SATURDAY
-                        )
-                    )
-                }
-
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK
-                )
-            }
-
-        return try {
-
-            if (
-                clockIntent.resolveActivity(
-                    context.packageManager
-                ) == null
-            ) {
-                return false
-            }
-
-            context.startActivity(clockIntent)
-
-            /*
-             * Give the Clock app a moment to process the
-             * ACTION_SET_ALARM request, then bring FRIDAY
-             * back to the foreground.
-             *
-             * This does not control the Clock app's window.
-             * It simply attempts to return the user to FRIDAY.
-             */
-            android.os.Handler(
-                context.mainLooper
-            ).postDelayed(
-                {
-                    bringFridayToForeground()
-                },
-                300L
-            )
-
-            true
-
-        } catch (_: Exception) {
-            false
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra(EXTRA_ALARM_ID, alarmId)
+            putExtra(EXTRA_TITLE, title)
+            putExtra(EXTRA_REPEAT_DAILY, repeatDaily)
         }
-    }
 
-    private fun bringFridayToForeground() {
-
-        val intent =
-            context.packageManager
-                .getLaunchIntentForPackage(
-                    context.packageName
-                )
-                ?: return
-
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            requestCode,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        try {
-            context.startActivity(intent)
-        } catch (_: Exception) {
+        val showIntent = context.packageManager?.getLaunchIntentForPackage(context.packageName)?.apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        val showPendingIntent = showIntent?.let {
+            PendingIntent.getActivity(
+                context,
+                requestCode,
+                it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        val alarmClockInfo = AlarmManager.AlarmClockInfo(
+            triggerAtMillis,
+            showPendingIntent
+        )
+
+        val mgr = alarmManager ?: return true
+
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !mgr.canScheduleExactAlarms()) {
+                mgr.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            } else {
+                mgr.setAlarmClock(alarmClockInfo, pendingIntent)
+            }
+            true
+        } catch (e: SecurityException) {
+            try {
+                mgr.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+                true
+            } catch (_: Exception) {
+                false
+            }
         }
     }
 
     fun cancelAlarm(
         alarmId: Long,
-        requestCode: Int = alarmId.toInt()
+        title: String
     ) {
-        /*
-         * The Android public AlarmClock API does not provide
-         * a generic way for FRIDAY to delete an alarm that
-         * was created inside the manufacturer's Clock app.
-         */
+        val intent = Intent(context, AlarmReceiver::class.java)
+
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            alarmId.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            alarmManager?.cancel(pendingIntent)
+            pendingIntent.cancel()
+        } catch (_: Exception) {}
     }
 
     companion object {
-
-        const val EXTRA_ALARM_ID =
-            "extra_alarm_id"
-
-        const val EXTRA_TITLE =
-            "extra_alarm_title"
-
-        const val EXTRA_REPEAT_DAILY =
-            "extra_repeat_daily"
+        const val EXTRA_ALARM_ID = "extra_alarm_id"
+        const val EXTRA_TITLE = "extra_alarm_title"
+        const val EXTRA_REPEAT_DAILY = "extra_repeat_daily"
+        const val SLEEP_GUARD_ALARM_ID = 730730L
     }
 }
-

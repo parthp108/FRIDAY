@@ -10,7 +10,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface AlarmDao {
 
-
     @Insert
     suspend fun insert(alarm: Alarm): Long
 

@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -14,6 +15,12 @@ interface MealDao {
 
     @Delete
     suspend fun deleteMeal(meal: Meal)
+
+    @Update
+    suspend fun updateMeal(meal: Meal)
+
+    @Query("SELECT * FROM meals WHERE id IN (:ids)")
+    suspend fun getMealsByIds(ids: List<Long>): List<Meal>
 
     @Query("SELECT * FROM meals ORDER BY timestamp DESC")
     fun getAllMeals(): Flow<List<Meal>>
@@ -28,4 +35,7 @@ interface MealDao {
         startOfDay: Long,
         endOfDay: Long
     ): Flow<List<Meal>>
+
+    @Query("SELECT * FROM meals WHERE timestamp >= :start AND timestamp < :end ORDER BY timestamp ASC")
+    suspend fun getMealsBetween(start: Long, end: Long): List<Meal>
 }

@@ -475,7 +475,7 @@ private fun TodoRow(
 
         Spacer(
             modifier =
-                Modifier.height(1.dp)
+                Modifier.height(4.dp)
         )
 
         Text(
