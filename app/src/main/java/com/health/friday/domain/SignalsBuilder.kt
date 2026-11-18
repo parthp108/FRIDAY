@@ -54,7 +54,10 @@ class SignalsBuilder(
                 val zone = ZoneId.systemDefault()
                 val date = Instant.ofEpochMilli(epochMillis).atZone(zone).toLocalDate()
 
-                buildDay(date, zone, hasHealthAccess())
+                val healthAccess = hasHealthAccess()
+                val historyAccess = hasHistoricalHealthAccess()
+
+                buildDay(date, zone, healthAccess, historyAccess)
             }
         }
 
@@ -64,10 +67,11 @@ class SignalsBuilder(
             mutex.withLock {
                 val zone = ZoneId.systemDefault()
                 val healthAccess = hasHealthAccess()
+                val historyAccess = hasHistoricalHealthAccess()
 
                 var date = startDate
                 while (!date.isAfter(endDate)) {
-                    buildDay(date, zone, healthAccess)
+                    buildDay(date, zone, healthAccess, historyAccess)
                     date = date.plusDays(1)
                 }
             }
@@ -88,10 +92,21 @@ class SignalsBuilder(
             false
         }
 
+    private suspend fun hasHistoricalHealthAccess(): Boolean =
+        try {
+            healthConnectRepo.supportsHistoryRead() &&
+                healthConnectRepo.hasHistoryReadAccess()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
+
     private suspend fun buildDay(
         date: LocalDate,
         zone: ZoneId,
-        healthAccess: Boolean
+        healthAccess: Boolean,
+        historyAccess: Boolean
     ) {
         val dateStr = date.toString() // ISO yyyy-MM-dd, always ASCII digits
         val start = date.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -158,7 +173,8 @@ class SignalsBuilder(
         var spo2Percent = existing?.spo2Percent
 
         // 5. Query full Health Connect telemetry
-        val inHealthWindow = !date.isBefore(today.minusDays(29))
+        val inHealthWindow =
+            historyAccess || !date.isBefore(today.minusDays(29))
 
         if (healthAccess && inHealthWindow) {
             try {

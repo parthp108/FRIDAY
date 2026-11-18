@@ -9,6 +9,7 @@ object CloudSyncEntityTypes {
     const val GOAL = "goal"
     const val JOURNAL_ENTRY = "journal_entry"
     const val DAILY_SIGNALS = "daily_signals"
+    const val HEALTH_RECORD = "health_record"
 }
 
 @Serializable
@@ -87,4 +88,30 @@ data class DailySignalsSyncPayload(
     val distanceMeters: Double?,
     val hrvMs: Double?,
     val spo2Percent: Double?
+)
+
+@Serializable
+data class HealthRecordSyncPayload(
+    val archiveId: String,
+    val sourceDeviceId: String,
+
+    val recordType: String,
+    val recordId: String,
+
+    val dataOriginPackage: String,
+
+    val clientRecordId: String?,
+    val clientRecordVersion: Long,
+
+    val lastModifiedTimeMs: Long,
+    val recordingMethod: Int,
+
+    val deviceManufacturer: String?,
+    val deviceModel: String?,
+    val deviceType: Int?,
+
+    val startTimeMs: Long?,
+    val endTimeMs: Long?,
+
+    val payloadJson: String
 )

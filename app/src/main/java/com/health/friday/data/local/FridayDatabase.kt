@@ -235,6 +235,73 @@ private val MIGRATION_17_18 = object : Migration(17, 18) {
     }
 }
 
+private val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS health_record_archive (
+                archiveId TEXT NOT NULL PRIMARY KEY,
+                sourceDeviceId TEXT NOT NULL,
+                recordType TEXT NOT NULL,
+                recordId TEXT NOT NULL,
+                dataOriginPackage TEXT NOT NULL,
+                clientRecordId TEXT,
+                clientRecordVersion INTEGER NOT NULL,
+                lastModifiedTimeMs INTEGER NOT NULL,
+                recordingMethod INTEGER NOT NULL,
+                deviceManufacturer TEXT,
+                deviceModel TEXT,
+                deviceType INTEGER,
+                startTimeMs INTEGER,
+                endTimeMs INTEGER,
+                payloadJson TEXT NOT NULL,
+                syncHlc TEXT,
+                isDeleted INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            index_health_record_archive_sourceDeviceId_recordType_recordId
+            ON health_record_archive(
+                sourceDeviceId,
+                recordType,
+                recordId
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS
+            index_health_record_archive_recordType_startTimeMs
+            ON health_record_archive(
+                recordType,
+                startTimeMs
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS health_connect_sync_state (
+                recordType TEXT NOT NULL PRIMARY KEY,
+                changesToken TEXT,
+                baselinePageToken TEXT,
+                baselineFromEpochMs INTEGER,
+                baselineStartedAtMs INTEGER,
+                baselineCompletedAtMs INTEGER,
+                baselineComplete INTEGER NOT NULL DEFAULT 0,
+                lastSyncAtMs INTEGER
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -242,9 +309,10 @@ private val MIGRATION_17_18 = object : Migration(17, 18) {
         ChatMessage::class, ActionLogEntity::class, DailySignalsEntity::class,
         FoodCalibrationEntity::class, NudgeHistoryEntity::class, ProtocolEntity::class,
         MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
-        CloudSyncCursorEntity::class, CloudSyncClockEntity::class
+        CloudSyncCursorEntity::class, CloudSyncClockEntity::class,
+        HealthRecordArchiveEntity::class, HealthConnectSyncStateEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -264,6 +332,7 @@ abstract class FridayDatabase : RoomDatabase() {
     abstract fun proactiveDao(): ProactiveDao
     abstract fun memoryFactDao(): MemoryFactDao
     abstract fun cloudSyncDao(): CloudSyncDao
+    abstract fun healthConnectArchiveDao(): HealthConnectArchiveDao
 
     companion object {
         @Volatile
@@ -284,7 +353,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_14_15,
                         MIGRATION_15_16,
                         MIGRATION_16_17,
-                        MIGRATION_17_18
+                        MIGRATION_17_18,
+                        MIGRATION_18_19
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()
