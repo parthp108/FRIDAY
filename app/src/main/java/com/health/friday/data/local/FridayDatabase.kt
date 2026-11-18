@@ -119,15 +119,69 @@ private val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+private val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_outbox (
+                operationId TEXT NOT NULL PRIMARY KEY,
+                originDeviceId TEXT NOT NULL,
+                entityType TEXT NOT NULL,
+                entityId TEXT NOT NULL,
+                operationType TEXT NOT NULL,
+                hlc TEXT NOT NULL,
+                createdAtMs INTEGER NOT NULL,
+                schemaVersion INTEGER NOT NULL,
+                payloadJson TEXT,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                batchId TEXT,
+                uploadedAtMs INTEGER
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE INDEX IF NOT EXISTS
+            index_cloud_sync_outbox_status_createdAtMs
+            ON cloud_sync_outbox(status, createdAtMs)
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_inbox (
+                operationId TEXT NOT NULL PRIMARY KEY,
+                batchId TEXT NOT NULL,
+                originDeviceId TEXT NOT NULL,
+                processedAtMs INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_cursor (
+                id INTEGER NOT NULL PRIMARY KEY,
+                drivePageToken TEXT,
+                lastSuccessfulSyncAtMs INTEGER
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
         TodoItem::class, Goal::class, JournalEntry::class, ChatConversation::class,
         ChatMessage::class, ActionLogEntity::class, DailySignalsEntity::class,
         FoodCalibrationEntity::class, NudgeHistoryEntity::class, ProtocolEntity::class,
-        MemoryFactEntity::class
+        MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
+        CloudSyncCursorEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -146,6 +200,7 @@ abstract class FridayDatabase : RoomDatabase() {
     abstract fun foodCalibrationDao(): FoodCalibrationDao
     abstract fun proactiveDao(): ProactiveDao
     abstract fun memoryFactDao(): MemoryFactDao
+    abstract fun cloudSyncDao(): CloudSyncDao
 
     companion object {
         @Volatile
@@ -162,7 +217,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_10_11,
                         MIGRATION_11_12,
                         MIGRATION_12_13,
-                        MIGRATION_13_14
+                        MIGRATION_13_14,
+                        MIGRATION_14_15
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()

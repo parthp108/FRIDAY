@@ -3,6 +3,7 @@ package com.health.friday.desktop.sync.drive
 import kotlinx.serialization.json.*
 import java.awt.Desktop
 import java.io.File
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -10,13 +11,9 @@ import java.net.Socket
 import java.net.URI
 import java.net.URLEncoder
 import java.net.URLDecoder
-import java.net.http.HttpClient
-import java.net.http.HttpRequest
-import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.security.SecureRandom
-import java.time.Duration
 import java.util.Base64
 import java.util.UUID
 
@@ -25,12 +22,6 @@ object DesktopDriveTest {
     private const val SCOPE = "https://www.googleapis.com/auth/drive.file"
     private const val TOKEN_URL = "https://oauth2.googleapis.com/token"
     private const val DRIVE_URL = "https://www.googleapis.com/drive/v3"
-
-    private fun getHttpClient(): HttpClient {
-        return HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(20))
-            .build()
-    }
 
     fun run(credentialsFile: File): String {
         require(credentialsFile.exists()) {
@@ -53,9 +44,9 @@ object DesktopDriveTest {
             "name = 'FRIDAY' and mimeType = 'application/vnd.google-apps.folder' " +
             "and trashed = false and appProperties has { key='fridayApp' and value='FRIDAY' }"
 
-        val folderList = driveGet(
-            accessToken,
-            "$DRIVE_URL/files?q=${encode(folderQuery)}&spaces=drive&pageSize=100&fields=files(id,name)"
+        val folderList = httpGet(
+            "$DRIVE_URL/files?q=${encode(folderQuery)}&spaces=drive&pageSize=100&fields=files(id,name)",
+            headers = mapOf("Authorization" to "Bearer $accessToken")
         )
 
         val folders = Json.parseToJsonElement(folderList)
@@ -99,44 +90,24 @@ object DesktopDriveTest {
             append("\r\n--$boundary--\r\n")
         }
 
-        val uploadRequest = HttpRequest.newBuilder()
-            .uri(
-                URI(
-                    "https://www.googleapis.com/upload/drive/v3/files" +
-                    "?uploadType=multipart&fields=id,name"
-                )
-            )
-            .header("Authorization", "Bearer $accessToken")
-            .header("Content-Type", "multipart/related; boundary=$boundary")
-            .POST(HttpRequest.BodyPublishers.ofString(multipartBody))
-            .build()
-
-        val uploadResponse = getHttpClient().send(
-            uploadRequest,
-            HttpResponse.BodyHandlers.ofString()
+        val uploadResponse = httpPost(
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name",
+            bodyStr = multipartBody,
+            contentType = "multipart/related; boundary=$boundary",
+            headers = mapOf("Authorization" to "Bearer $accessToken")
         )
 
-        requireSuccess(uploadResponse.statusCode(), uploadResponse.body(), "Upload")
-
-        val fileId = Json.parseToJsonElement(uploadResponse.body())
+        val fileId = Json.parseToJsonElement(uploadResponse)
             .jsonObject["id"]?.jsonPrimitive?.content
             ?: error("Upload succeeded but Google did not return a file ID.")
 
         // Download the uploaded file.
-        val downloadRequest = HttpRequest.newBuilder()
-            .uri(URI("$DRIVE_URL/files/$fileId?alt=media"))
-            .header("Authorization", "Bearer $accessToken")
-            .GET()
-            .build()
-
-        val downloadResponse = getHttpClient().send(
-            downloadRequest,
-            HttpResponse.BodyHandlers.ofString()
+        val downloadResponse = httpGet(
+            "$DRIVE_URL/files/$fileId?alt=media",
+            headers = mapOf("Authorization" to "Bearer $accessToken")
         )
 
-        requireSuccess(downloadResponse.statusCode(), downloadResponse.body(), "Download")
-
-        check(downloadResponse.body() == payload) {
+        check(downloadResponse == payload) {
             "Downloaded content does not match the uploaded content."
         }
 
@@ -174,6 +145,10 @@ object DesktopDriveTest {
         val port = serverSocket.localPort
         val redirectUri = "http://127.0.0.1:$port"
 
+        println("FRIDAY OAuth listener bound to: $redirectUri")
+        println("FRIDAY OAuth listener open: ${!serverSocket.isClosed}")
+        println("FRIDAY OAuth listener local address: ${serverSocket.localSocketAddress}")
+
         val authParams = linkedMapOf(
             "client_id" to clientId,
             "redirect_uri" to redirectUri,
@@ -195,6 +170,8 @@ object DesktopDriveTest {
         check(Desktop.isDesktopSupported()) {
             "This system cannot open a browser for Google authorization."
         }
+
+        println("FRIDAY opening Google OAuth browser")
 
         // Open default browser
         Desktop.getDesktop().browse(URI(authUrl))
@@ -269,29 +246,18 @@ object DesktopDriveTest {
             "${encode(it.key)}=${encode(it.value)}"
         }
 
-        val tokenRequest = HttpRequest.newBuilder()
-            .uri(URI(TOKEN_URL))
-            .header("Content-Type", "application/x-www-form-urlencoded")
-            .POST(HttpRequest.BodyPublishers.ofString(tokenBody))
-            .build()
-
-        val tokenResponse = getHttpClient().send(
-            tokenRequest,
-            HttpResponse.BodyHandlers.ofString()
+        val tokenResponse = httpPost(
+            TOKEN_URL,
+            bodyStr = tokenBody,
+            contentType = "application/x-www-form-urlencoded"
         )
 
-        requireSuccess(
-            tokenResponse.statusCode(),
-            tokenResponse.body(),
-            "OAuth token exchange"
-        )
-
-        return Json.parseToJsonElement(tokenResponse.body())
+        return Json.parseToJsonElement(tokenResponse)
             .jsonObject["access_token"]?.jsonPrimitive?.content
             ?: error("Google did not return an access token.")
     }
 
-    private fun sendHtmlResponse(socket: java.net.Socket, title: String, message: String) {
+    private fun sendHtmlResponse(socket: Socket, title: String, message: String) {
         runCatching {
             val html = """
                 <!doctype html>
@@ -314,16 +280,47 @@ object DesktopDriveTest {
         }
     }
 
-    private fun driveGet(token: String, url: String): String {
-        val request = HttpRequest.newBuilder()
-            .uri(URI(url))
-            .header("Authorization", "Bearer $token")
-            .GET()
-            .build()
+    private fun httpGet(urlStr: String, headers: Map<String, String> = emptyMap()): String {
+        val url = URI(urlStr).toURL()
+        val conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 20_000
+        conn.readTimeout = 20_000
+        conn.requestMethod = "GET"
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
 
-        val response = getHttpClient().send(request, HttpResponse.BodyHandlers.ofString())
-        requireSuccess(response.statusCode(), response.body(), "Drive request")
-        return response.body()
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val responseText = stream?.bufferedReader(StandardCharsets.UTF_8)?.readText().orEmpty()
+
+        requireSuccess(code, responseText, "Drive GET $urlStr")
+        return responseText
+    }
+
+    private fun httpPost(
+        urlStr: String,
+        bodyStr: String,
+        contentType: String,
+        headers: Map<String, String> = emptyMap()
+    ): String {
+        val url = URI(urlStr).toURL()
+        val conn = url.openConnection() as HttpURLConnection
+        conn.connectTimeout = 20_000
+        conn.readTimeout = 20_000
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", contentType)
+        headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
+
+        conn.outputStream.use { os ->
+            os.write(bodyStr.toByteArray(StandardCharsets.UTF_8))
+        }
+
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        val responseText = stream?.bufferedReader(StandardCharsets.UTF_8)?.readText().orEmpty()
+
+        requireSuccess(code, responseText, "Drive POST $urlStr")
+        return responseText
     }
 
     private fun requireSuccess(status: Int, body: String, operation: String) {
