@@ -65,11 +65,21 @@ import com.health.friday.voice.pipeline.PcmJournalAudioRecorder
 import com.health.friday.voice.pipeline.SileroVadEngine
 import com.health.friday.voice.pipeline.StreamingAsrEngine
 import com.health.friday.voice.pipeline.WakewordEngine
+import com.health.friday.bridge.DeviceIdentity
+import com.health.friday.sync.cloud.AndroidHybridLogicalClock
 import com.health.friday.spotify.SpotifyAuth
 
 class AppContainer(private val context: Context) {
 
     val database by lazy { FridayDatabase.getDatabase(context) }
+    val deviceIdentity by lazy { DeviceIdentity(context) }
+    val cloudSyncClock by lazy {
+        AndroidHybridLogicalClock(
+            database = database,
+            dao = database.cloudSyncDao(),
+            nodeId = deviceIdentity.deviceId
+        )
+    }
     val settingsRepository by lazy { SettingsRepository(context) }
     val healthConnectRepository by lazy { HealthConnectRepository(context) }
     val usageRepository by lazy { DeviceUsageRepository(context) }

@@ -85,6 +85,20 @@ interface CloudSyncDao {
         cursor: CloudSyncCursorEntity
     )
 
+    // ---------------- CLOCK ----------------
+
+    @Query(
+        """
+        SELECT * FROM cloud_sync_clock
+        WHERE id = 1
+        LIMIT 1
+        """
+    )
+    suspend fun getClockState(): CloudSyncClockEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveClockState(state: CloudSyncClockEntity)
+
     // ---------------- MAINTENANCE ----------------
 
     @Query(

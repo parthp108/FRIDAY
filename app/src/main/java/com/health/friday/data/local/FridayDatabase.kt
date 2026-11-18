@@ -212,6 +212,21 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+private val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_clock (
+                id INTEGER NOT NULL PRIMARY KEY,
+                nodeId TEXT NOT NULL,
+                lastWallMs INTEGER NOT NULL,
+                lastCounter INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -219,9 +234,9 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
         ChatMessage::class, ActionLogEntity::class, DailySignalsEntity::class,
         FoodCalibrationEntity::class, NudgeHistoryEntity::class, ProtocolEntity::class,
         MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
-        CloudSyncCursorEntity::class
+        CloudSyncCursorEntity::class, CloudSyncClockEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -259,7 +274,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
-                        MIGRATION_15_16
+                        MIGRATION_15_16,
+                        MIGRATION_16_17
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()

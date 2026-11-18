@@ -50,3 +50,13 @@ data class CloudSyncCursorEntity(
     val drivePageToken: String? = null,
     val lastSuccessfulSyncAtMs: Long? = null
 )
+
+@Entity(tableName = "cloud_sync_clock")
+data class CloudSyncClockEntity(
+    @PrimaryKey
+    val id: Int = 1,
+
+    val nodeId: String,
+    val lastWallMs: Long,
+    val lastCounter: Int
+)
