@@ -4,10 +4,18 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.changes.DeletionChange
 import androidx.health.connect.client.changes.UpsertionChange
 import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
+import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
+import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -74,7 +82,15 @@ class HealthConnectArchiveSyncer(
                 RecordSyncTarget(StepsRecord::class, StepsRecordAdapter),
                 RecordSyncTarget(HeartRateRecord::class, HeartRateRecordAdapter),
                 RecordSyncTarget(SleepSessionRecord::class, SleepSessionRecordAdapter),
-                RecordSyncTarget(WeightRecord::class, WeightRecordAdapter)
+                RecordSyncTarget(WeightRecord::class, WeightRecordAdapter),
+                RecordSyncTarget(DistanceRecord::class, DistanceRecordAdapter),
+                RecordSyncTarget(ActiveCaloriesBurnedRecord::class, ActiveCaloriesRecordAdapter),
+                RecordSyncTarget(TotalCaloriesBurnedRecord::class, TotalCaloriesRecordAdapter),
+                RecordSyncTarget(FloorsClimbedRecord::class, FloorsClimbedRecordAdapter),
+                RecordSyncTarget(BasalMetabolicRateRecord::class, BasalMetabolicRateRecordAdapter),
+                RecordSyncTarget(BodyFatRecord::class, BodyFatRecordAdapter),
+                RecordSyncTarget(HeightRecord::class, HeightRecordAdapter),
+                RecordSyncTarget(Vo2MaxRecord::class, Vo2MaxRecordAdapter)
             )
 
             val granted = healthConnectRepo.getGrantedPermissions()
