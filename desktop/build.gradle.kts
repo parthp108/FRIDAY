@@ -31,6 +31,8 @@ kotlin {
                 implementation("cafe.adriel.voyager:voyager-koin:1.0.0")
                 implementation("io.insert-koin:koin-core:3.5.3")
                 implementation("com.github.kwhat:jnativehook:2.2.2")
+                implementation("net.java.dev.jna:jna:5.14.0")
+                implementation("net.java.dev.jna:jna-platform:5.14.0")
             }
         }
     }

@@ -12,7 +12,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.health.friday.desktop.sync.drive.DesktopDriveTest
+import com.health.friday.desktop.sync.cloud.DesktopCloudSyncService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,13 +31,14 @@ fun DesktopSettingsScreen(
     var localLlmEnabled by remember { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
-    var driveTestRunning by remember { mutableStateOf(false) }
-    var driveTestStatus by remember {
-        mutableStateOf("Not connected")
-    }
+    val syncService = remember { DesktopCloudSyncService() }
+    var syncRunning by remember { mutableStateOf(false) }
+    var syncStatus by remember { mutableStateOf("Not connected") }
+    var passphraseInput by remember { mutableStateOf("") }
+    var confirmPassphraseInput by remember { mutableStateOf("") }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        // CARD 0: GOOGLE DRIVE CONNECTION
+        // CARD 0: ENCRYPTED GOOGLE DRIVE RECOVERY & SYNC
         item {
             Surface(
                 color = Color(0xFF1E293B),
@@ -49,66 +50,142 @@ fun DesktopSettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        "Google Drive Connection",
+                        "Encrypted Google Drive Recovery & Sync",
                         color = Color(0xFF38BDF8),
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp
                     )
 
                     Text(
-                        "Connect this Windows installation to the same FRIDAY Drive folder used by Android.",
+                        "Connect this Windows installation to Google Drive, back up a new recovery phrase, or restore your key using Android's recovery phrase.",
                         color = Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )
 
-                    Button(
-                        enabled = !driveTestRunning,
-                        onClick = {
-                            val chooser = JFileChooser().apply {
-                                dialogTitle = "Select Google Desktop OAuth credentials"
-                                fileSelectionMode = JFileChooser.FILES_ONLY
-                            }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            enabled = !syncRunning,
+                            onClick = {
+                                val chooser = JFileChooser().apply {
+                                    dialogTitle = "Select Google Desktop OAuth credentials JSON"
+                                    fileSelectionMode = JFileChooser.FILES_ONLY
+                                }
 
-                            if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                                val credentialsFile = chooser.selectedFile
+                                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                                    val credentialsFile = chooser.selectedFile
+                                    syncRunning = true
+                                    syncStatus = "Opening browser for Google authorization..."
 
-                                driveTestRunning = true
-                                driveTestStatus = "Opening Google authorization..."
+                                    scope.launch {
+                                        val result = runCatching {
+                                            withContext(Dispatchers.IO) {
+                                                syncService.connect(credentialsFile)
+                                            }
+                                        }
+
+                                        syncStatus = result.fold(
+                                            onSuccess = { it },
+                                            onFailure = { "CONNECT FAILED: ${it.message ?: it}" }
+                                        )
+                                        syncRunning = false
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                        ) {
+                            Text("1. Connect Google Drive")
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = passphraseInput,
+                        onValueChange = { passphraseInput = it },
+                        label = { Text("Recovery phrase (16+ characters)") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF0F172A),
+                            unfocusedContainerColor = Color(0xFF0F172A)
+                        )
+                    )
+
+                    OutlinedTextField(
+                        value = confirmPassphraseInput,
+                        onValueChange = { confirmPassphraseInput = it },
+                        label = { Text("Confirm recovery phrase (for backup)") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedContainerColor = Color(0xFF0F172A),
+                            unfocusedContainerColor = Color(0xFF0F172A)
+                        )
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            enabled = !syncRunning && passphraseInput.length >= 16 && passphraseInput == confirmPassphraseInput,
+                            onClick = {
+                                val phrase = passphraseInput.toCharArray()
+                                syncRunning = true
+                                syncStatus = "Backing up recovery key to Google Drive..."
 
                                 scope.launch {
                                     val result = runCatching {
                                         withContext(Dispatchers.IO) {
-                                            DesktopDriveTest.run(credentialsFile)
+                                            syncService.backUpRecoveryKey(phrase)
                                         }
                                     }
 
-                                    driveTestStatus = result.fold(
-                                        onSuccess = { "DRIVE TEST PASSED\n\n$it" },
-                                        onFailure = {
-                                            val detail = it.localizedMessage ?: it.toString()
-                                            "DRIVE TEST FAILED\n\n$detail"
-                                        }
+                                    syncStatus = result.fold(
+                                        onSuccess = { it },
+                                        onFailure = { "BACKUP FAILED: ${it.message ?: it}" }
                                     )
-
-                                    driveTestRunning = false
+                                    passphraseInput = ""
+                                    confirmPassphraseInput = ""
+                                    syncRunning = false
                                 }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF0284C7)
-                        )
-                    ) {
-                        Text(
-                            if (driveTestRunning) "Testing..." else "Connect & Run Drive Test"
-                        )
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                        ) {
+                            Text("2. Back Up Recovery Key")
+                        }
+
+                        Button(
+                            enabled = !syncRunning && passphraseInput.length >= 16,
+                            onClick = {
+                                val phrase = passphraseInput.toCharArray()
+                                syncRunning = true
+                                syncStatus = "Restoring key from Google Drive..."
+
+                                scope.launch {
+                                    val result = runCatching {
+                                        withContext(Dispatchers.IO) {
+                                            syncService.restoreRecoveryKey(phrase)
+                                        }
+                                    }
+
+                                    syncStatus = result.fold(
+                                        onSuccess = { it },
+                                        onFailure = { "RESTORE FAILED: ${it.message ?: it}" }
+                                    )
+                                    passphraseInput = ""
+                                    confirmPassphraseInput = ""
+                                    syncRunning = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                        ) {
+                            Text("3. Restore Key on Windows")
+                        }
                     }
 
                     Text(
-                        driveTestStatus,
-                        color = if (driveTestStatus.startsWith("DRIVE TEST PASSED"))
-                            Color(0xFF4ADE80)
-                        else
-                            Color(0xFFCBD5E1),
+                        syncStatus,
+                        color = Color(0xFFCBD5E1),
                         fontSize = 12.sp
                     )
                 }
