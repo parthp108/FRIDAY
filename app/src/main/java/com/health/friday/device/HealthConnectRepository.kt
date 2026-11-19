@@ -141,6 +141,9 @@ class HealthConnectRepository(
     val historyReadPermission: String =
         HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
 
+    val backgroundReadPermission: String =
+        HealthPermission.PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND
+
     fun supportsHistoryRead(): Boolean {
         if (!isAvailable()) return false
 
@@ -155,6 +158,10 @@ class HealthConnectRepository(
 
     suspend fun hasHistoryReadAccess(): Boolean {
         return historyReadPermission in getGrantedPermissions()
+    }
+
+    suspend fun hasBackgroundReadAccess(): Boolean {
+        return backgroundReadPermission in getGrantedPermissions()
     }
 
     fun obtainHealthConnectClient(): HealthConnectClient? {
