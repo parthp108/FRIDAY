@@ -11,9 +11,7 @@ interface CloudSyncDao {
     // ---------------- OUTBOX ----------------
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertOutbox(
-        operation: CloudSyncOutboxEntity
-    ): Long
+    suspend fun insertOutbox(operation: CloudSyncOutboxEntity): Long
 
     @Query(
         """
@@ -23,9 +21,7 @@ interface CloudSyncDao {
         LIMIT :limit
         """
     )
-    suspend fun getPendingOutbox(
-        limit: Int
-    ): List<CloudSyncOutboxEntity>
+    suspend fun getPendingOutbox(limit: Int): List<CloudSyncOutboxEntity>
 
     @Query(
         """
@@ -53,9 +49,7 @@ interface CloudSyncDao {
     // ---------------- INBOX ----------------
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertInbox(
-        operation: CloudSyncInboxEntity
-    ): Long
+    suspend fun insertInbox(operation: CloudSyncInboxEntity): Long
 
     @Query(
         """
@@ -65,9 +59,7 @@ interface CloudSyncDao {
         )
         """
     )
-    suspend fun hasProcessed(
-        operationId: String
-    ): Boolean
+    suspend fun hasProcessed(operationId: String): Boolean
 
     // ---------------- CURSOR ----------------
 
@@ -81,9 +73,7 @@ interface CloudSyncDao {
     suspend fun getCursor(): CloudSyncCursorEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun saveCursor(
-        cursor: CloudSyncCursorEntity
-    )
+    suspend fun saveCursor(cursor: CloudSyncCursorEntity)
 
     // ---------------- CLOCK ----------------
 
@@ -99,6 +89,23 @@ interface CloudSyncDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveClockState(state: CloudSyncClockEntity)
 
+    // ---------------- PER-ENTITY VERSION / TOMBSTONE ----------------
+
+    @Query(
+        """
+        SELECT * FROM cloud_sync_entity_state
+        WHERE entityType = :entityType AND entityId = :entityId
+        LIMIT 1
+        """
+    )
+    suspend fun getEntityState(
+        entityType: String,
+        entityId: String
+    ): CloudSyncEntityStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveEntityState(state: CloudSyncEntityStateEntity)
+
     // ---------------- MAINTENANCE ----------------
 
     @Query(
@@ -109,9 +116,7 @@ interface CloudSyncDao {
         AND uploadedAtMs < :olderThanMs
         """
     )
-    suspend fun deleteOldUploadedOperations(
-        olderThanMs: Long
-    ): Int
+    suspend fun deleteOldUploadedOperations(olderThanMs: Long): Int
 
     @Query(
         """
@@ -119,7 +124,5 @@ interface CloudSyncDao {
         WHERE processedAtMs < :olderThanMs
         """
     )
-    suspend fun deleteOldInboxEntries(
-        olderThanMs: Long
-    ): Int
+    suspend fun deleteOldInboxEntries(olderThanMs: Long): Int
 }

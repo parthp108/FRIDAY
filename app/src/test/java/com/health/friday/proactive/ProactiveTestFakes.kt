@@ -51,6 +51,11 @@ class FakeProactiveDao : ProactiveDao {
 class FakeDailySignalsDao : DailySignalsDao {
     val signalsMap = mutableMapOf<String, DailySignalsEntity>()
 
+    override suspend fun deleteByDate(date: String): Int {
+        val removed = signalsMap.remove(date)
+        return if (removed != null) 1 else 0
+    }
+
     override suspend fun insertOrUpdate(signal: DailySignalsEntity) {
         signalsMap[signal.date] = signal
     }

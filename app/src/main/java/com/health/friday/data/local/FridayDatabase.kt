@@ -121,7 +121,6 @@ private val MIGRATION_13_14 = object : Migration(13, 14) {
 
 private val MIGRATION_14_15 = object : Migration(14, 15) {
     override fun migrate(db: SupportSQLiteDatabase) {
-
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS cloud_sync_outbox (
@@ -174,7 +173,6 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
 
 private val MIGRATION_15_16 = object : Migration(15, 16) {
     override fun migrate(db: SupportSQLiteDatabase) {
-
         val tables = listOf(
             "meals",
             "water_entries",
@@ -184,15 +182,8 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
         )
 
         for (table in tables) {
-            db.execSQL(
-                "ALTER TABLE $table ADD COLUMN syncId TEXT NOT NULL DEFAULT ''"
-            )
-
-            db.execSQL(
-                "ALTER TABLE $table ADD COLUMN syncHlc TEXT"
-            )
-
-            // Give every existing record its own cloud identity.
+            db.execSQL("ALTER TABLE $table ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $table ADD COLUMN syncHlc TEXT")
             db.execSQL(
                 """
                 UPDATE $table
@@ -200,7 +191,6 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
                 WHERE syncId = ''
                 """.trimIndent()
             )
-
             db.execSQL(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS
@@ -229,15 +219,12 @@ private val MIGRATION_16_17 = object : Migration(16, 17) {
 
 private val MIGRATION_17_18 = object : Migration(17, 18) {
     override fun migrate(db: SupportSQLiteDatabase) {
-        db.execSQL(
-            "ALTER TABLE daily_signals ADD COLUMN syncHlc TEXT"
-        )
+        db.execSQL("ALTER TABLE daily_signals ADD COLUMN syncHlc TEXT")
     }
 }
 
 private val MIGRATION_18_19 = object : Migration(18, 19) {
     override fun migrate(db: SupportSQLiteDatabase) {
-
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS health_record_archive (
@@ -325,6 +312,23 @@ private val MIGRATION_19_20 = object : Migration(19, 20) {
     }
 }
 
+private val MIGRATION_20_21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_entity_state (
+                entityType TEXT NOT NULL,
+                entityId TEXT NOT NULL,
+                lastHlc TEXT NOT NULL,
+                isDeleted INTEGER NOT NULL DEFAULT 0,
+                updatedAtMs INTEGER NOT NULL,
+                PRIMARY KEY(entityType, entityId)
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -333,9 +337,10 @@ private val MIGRATION_19_20 = object : Migration(19, 20) {
         FoodCalibrationEntity::class, NudgeHistoryEntity::class, ProtocolEntity::class,
         MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
         CloudSyncCursorEntity::class, CloudSyncClockEntity::class,
-        HealthRecordArchiveEntity::class, HealthConnectSyncStateEntity::class
+        HealthRecordArchiveEntity::class, HealthConnectSyncStateEntity::class,
+        CloudSyncEntityStateEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -378,7 +383,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_16_17,
                         MIGRATION_17_18,
                         MIGRATION_18_19,
-                        MIGRATION_19_20
+                        MIGRATION_19_20,
+                        MIGRATION_20_21
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()

@@ -14,6 +14,9 @@ interface DailySignalsDao {
     @Query("SELECT * FROM daily_signals WHERE date = :date LIMIT 1")
     suspend fun getSignalForDate(date: String): DailySignalsEntity?
 
+    @Query("DELETE FROM daily_signals WHERE date = :date")
+    suspend fun deleteByDate(date: String): Int
+
     @Query("SELECT * FROM daily_signals WHERE date = :date LIMIT 1")
     fun observeSignalForDate(date: String): Flow<DailySignalsEntity?>
 

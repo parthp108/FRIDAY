@@ -11,9 +11,16 @@ interface HealthConnectArchiveDao {
     // ---------------- RECORD ARCHIVE ----------------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertRecord(
-        record: HealthRecordArchiveEntity
+    suspend fun upsertRecord(record: HealthRecordArchiveEntity)
+
+    @Query(
+        """
+        SELECT * FROM health_record_archive
+        WHERE archiveId = :archiveId
+        LIMIT 1
+        """
     )
+    suspend fun getByArchiveId(archiveId: String): HealthRecordArchiveEntity?
 
     @Query(
         """
@@ -49,6 +56,19 @@ interface HealthConnectArchiveDao {
         UPDATE health_record_archive
         SET isDeleted = 1,
             syncHlc = :syncHlc
+        WHERE archiveId = :archiveId
+        """
+    )
+    suspend fun markDeletedByArchiveId(
+        archiveId: String,
+        syncHlc: String
+    ): Int
+
+    @Query(
+        """
+        UPDATE health_record_archive
+        SET isDeleted = 1,
+            syncHlc = :syncHlc
         WHERE sourceDeviceId = :sourceDeviceId
           AND recordType = :recordType
           AND recordId = :recordId
@@ -64,9 +84,7 @@ interface HealthConnectArchiveDao {
     // ---------------- PER-TYPE SYNC STATE ----------------
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun saveSyncState(
-        state: HealthConnectSyncStateEntity
-    )
+    suspend fun saveSyncState(state: HealthConnectSyncStateEntity)
 
     @Query(
         """
@@ -75,15 +93,8 @@ interface HealthConnectArchiveDao {
         LIMIT 1
         """
     )
-    suspend fun getSyncState(
-        recordType: String
-    ): HealthConnectSyncStateEntity?
+    suspend fun getSyncState(recordType: String): HealthConnectSyncStateEntity?
 
-    @Query(
-        """
-        SELECT * FROM health_connect_sync_state
-        ORDER BY recordType ASC
-        """
-    )
+    @Query("SELECT * FROM health_connect_sync_state ORDER BY recordType ASC")
     suspend fun getAllSyncStates(): List<HealthConnectSyncStateEntity>
 }
