@@ -200,7 +200,7 @@ class NutritionRepository(
             isEstimated = true
         )
 
-        val mealId = mealDao.insertMeal(meal)
+        val mealId = insertMealWithSync(meal)
 
         try {
             healthConnectRepository.writeMeal(

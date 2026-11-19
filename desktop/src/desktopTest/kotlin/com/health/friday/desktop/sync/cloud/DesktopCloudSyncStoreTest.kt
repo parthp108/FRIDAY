@@ -70,6 +70,76 @@ class DesktopCloudSyncStoreTest {
     }
 
     @Test
+    fun staleUpsertCannotResurrectNewerTombstone() = withStore { store, _ ->
+        val wall = 1_700_000_000_000L
+        val delete = SyncOperation(
+            operationId = "op-delete-newer",
+            originDeviceId = "android-node",
+            entityType = CloudSyncEntityTypes.MEAL,
+            entityId = "meal-id-1",
+            operationType = SyncOperationType.DELETE,
+            hlc = HlcTimestamp(wall, 8, "android-node").encode(),
+            createdAtMs = wall
+        )
+        val staleUpsert = mealUpsert(
+            "android-node",
+            HlcTimestamp(wall, 7, "android-node").encode(),
+            "op-upsert-older",
+            name = "Stale meal"
+        )
+
+        store.ingestRemoteBatch(
+            SyncBatch("batch-delete-newer", originDeviceId = "android-node", createdAtMs = wall, operations = listOf(delete)),
+            SyncCursor(lastSuccessfulSyncAtMs = wall)
+        )
+        val result = store.ingestRemoteBatch(
+            SyncBatch("batch-upsert-older", originDeviceId = "android-node", createdAtMs = wall, operations = listOf(staleUpsert)),
+            SyncCursor(lastSuccessfulSyncAtMs = wall + 1)
+        )
+
+        val entity = store.snapshotEntities().single()
+        assertEquals(0, result.appliedOperations)
+        assertEquals(1, result.duplicateOperations)
+        assertTrue(entity.isDeleted)
+        assertEquals(delete.hlc, entity.hlc)
+    }
+
+    @Test
+    fun newerUpsertCanReplaceOlderTombstone() = withStore { store, _ ->
+        val wall = 1_700_000_000_000L
+        val delete = SyncOperation(
+            operationId = "op-delete-older",
+            originDeviceId = "android-node",
+            entityType = CloudSyncEntityTypes.MEAL,
+            entityId = "meal-id-1",
+            operationType = SyncOperationType.DELETE,
+            hlc = HlcTimestamp(wall, 7, "android-node").encode(),
+            createdAtMs = wall
+        )
+        val newerUpsert = mealUpsert(
+            "android-node",
+            HlcTimestamp(wall, 8, "android-node").encode(),
+            "op-upsert-newer",
+            name = "Restored meal"
+        )
+
+        store.ingestRemoteBatch(
+            SyncBatch("batch-delete-older", originDeviceId = "android-node", createdAtMs = wall, operations = listOf(delete)),
+            SyncCursor(lastSuccessfulSyncAtMs = wall)
+        )
+        val result = store.ingestRemoteBatch(
+            SyncBatch("batch-upsert-newer", originDeviceId = "android-node", createdAtMs = wall, operations = listOf(newerUpsert)),
+            SyncCursor(lastSuccessfulSyncAtMs = wall + 1)
+        )
+
+        val entity = store.snapshotEntities().single()
+        assertEquals(1, result.appliedOperations)
+        assertEquals(false, entity.isDeleted)
+        assertEquals(newerUpsert.hlc, entity.hlc)
+        assertTrue(entity.payloadJson?.contains("Restored meal") == true)
+    }
+
+    @Test
     fun malformedDailySignalsDeleteIsRejectedBeforeCommit() = withStore { store, _ ->
         val wall = 1_700_000_000_000L
         val delete = SyncOperation(
