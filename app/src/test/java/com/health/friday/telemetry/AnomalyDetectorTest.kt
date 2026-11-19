@@ -25,7 +25,7 @@ class AnomalyDetectorTest {
     fun setUp() {
         fakeSignalsDao = FakeDailySignalsDao()
         fakeProactiveDao = FakeProactiveDao()
-        nudgePolicy = NudgePolicy(fakeProactiveDao)
+        nudgePolicy = NudgePolicy(fakeProactiveDao, currentHourProvider = { 12 })
         fakeContext = object : ContextWrapper(null) {
             override fun getApplicationContext(): Context = this
         }

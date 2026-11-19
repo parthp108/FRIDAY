@@ -83,27 +83,29 @@ class AnomalyDetector(
     }
 
     private fun sendAlert(title: String, message: String) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        val channelId = "friday_anomalies"
+        runCatching {
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+            val channelId = "friday_anomalies"
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, "FRIDAY Health Alerts", NotificationManager.IMPORTANCE_HIGH)
-            manager.createNotificationChannel(channel)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(channelId, "FRIDAY Health Alerts", NotificationManager.IMPORTANCE_HIGH)
+                manager.createNotificationChannel(channel)
+            }
+
+            val intent = Intent(context, MainActivity::class.java)
+            val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+            val notification = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(R.mipmap.ic_launcher) // Ensure you have this basic icon
+                .setContentTitle("FRIDAY: $title")
+                .setContentText(message)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+                .setContentIntent(pi)
+                .setAutoCancel(true)
+                .build()
+
+            manager.notify(System.currentTimeMillis().toInt(), notification)
         }
-
-        val intent = Intent(context, MainActivity::class.java)
-        val pi = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-        val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher) // Ensure you have this basic icon
-            .setContentTitle("FRIDAY: $title")
-            .setContentText(message)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
-            .setContentIntent(pi)
-            .setAutoCancel(true)
-            .build()
-
-        manager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
     private companion object {

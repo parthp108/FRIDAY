@@ -3,13 +3,16 @@ package com.health.friday.proactive
 import com.health.friday.util.DayRange
 import java.util.Calendar
 
-class NudgePolicy(private val dao: ProactiveDao) {
+class NudgePolicy(
+    private val dao: ProactiveDao,
+    private val currentHourProvider: () -> Int = { Calendar.getInstance().get(Calendar.HOUR_OF_DAY) }
+) {
 
     suspend fun canNudge(type: String): Boolean {
         val isWaterReminder = type == WATER_REMINDER_TYPE || type.startsWith("water_")
 
         // 1. Daytime Window & Quiet Hours
-        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val hour = currentHourProvider()
         if (isWaterReminder) {
             // Daytime water reminders run between 8:00 AM and 8:00 PM (hours 8..19)
             if (hour !in 8..19) return false

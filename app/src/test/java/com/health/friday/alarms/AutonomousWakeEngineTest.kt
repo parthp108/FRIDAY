@@ -101,6 +101,13 @@ class AutonomousWakeEngineTest {
     fun testUserStillAsleep_doesNotCancelBackupAlarm() = runBlocking {
         val todayStr = LocalDate.now().toString()
 
+        // Existing backup alarm already scheduled
+        alarmRepository.addAlarm(
+            title = AutonomousWakeEngine.BACKUP_ALARM_TITLE,
+            timeMillis = System.currentTimeMillis() + 3600000L,
+            repeatDaily = false
+        )
+
         // User still sleeping (no sleepEndEpoch, 0 steps)
         fakeSignalsDao.insertOrUpdate(
             DailySignalsEntity(

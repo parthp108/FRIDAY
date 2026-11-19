@@ -4,11 +4,16 @@ import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ExerciseRouteResult
+import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.SpeedRecord
+import androidx.health.connect.client.records.StepsCadenceRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
@@ -217,6 +222,141 @@ object Vo2MaxRecordAdapter : HealthRecordAdapter<Vo2MaxRecord> {
 
     override fun extractStartTimeMs(record: Vo2MaxRecord): Long = record.time.toEpochMilli()
     override fun extractEndTimeMs(record: Vo2MaxRecord): Long = record.time.toEpochMilli()
+}
+
+object ExerciseSessionRecordAdapter : HealthRecordAdapter<ExerciseSessionRecord> {
+    override val recordType: String = "exercise_session"
+
+    override fun serializePayload(record: ExerciseSessionRecord): JsonObject = buildJsonObject {
+        put("exerciseType", record.exerciseType)
+        record.title?.let { put("title", it) }
+        record.notes?.let { put("notes", it) }
+        record.plannedExerciseSessionId?.let { put("plannedExerciseSessionId", it) }
+
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        put("segments", buildJsonArray {
+            record.segments.forEach { segment ->
+                add(buildJsonObject {
+                    put("segmentType", segment.segmentType)
+                    put("startTime", segment.startTime.toEpochMilli())
+                    put("endTime", segment.endTime.toEpochMilli())
+                    put("repetitions", segment.repetitions)
+                })
+            }
+        })
+
+        put("laps", buildJsonArray {
+            record.laps.forEach { lap ->
+                add(buildJsonObject {
+                    put("startTime", lap.startTime.toEpochMilli())
+                    put("endTime", lap.endTime.toEpochMilli())
+                    lap.length?.let { put("lengthMeters", it.inMeters) }
+                })
+            }
+        })
+
+        when (val route = record.exerciseRouteResult) {
+            is ExerciseRouteResult.Data -> {
+                put("routeAccess", "available")
+                put("route", buildJsonArray {
+                    route.exerciseRoute.route.forEach { point ->
+                        add(buildJsonObject {
+                            put("time", point.time.toEpochMilli())
+                            put("latitude", point.latitude)
+                            put("longitude", point.longitude)
+                            point.altitude?.let { put("altitudeMeters", it.inMeters) }
+                            point.horizontalAccuracy?.let { put("horizontalAccuracyMeters", it.inMeters) }
+                            point.verticalAccuracy?.let { put("verticalAccuracyMeters", it.inMeters) }
+                        })
+                    }
+                })
+            }
+            is ExerciseRouteResult.ConsentRequired -> {
+                put("routeAccess", "consent_required")
+            }
+            is ExerciseRouteResult.NoData -> {
+                put("routeAccess", "no_data")
+            }
+            else -> put("routeAccess", "unknown")
+        }
+    }
+
+    override fun extractStartTimeMs(record: ExerciseSessionRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: ExerciseSessionRecord): Long = record.endTime.toEpochMilli()
+}
+
+object PowerRecordAdapter : HealthRecordAdapter<PowerRecord> {
+    override val recordType: String = "power"
+
+    override fun serializePayload(record: PowerRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        put("samples", buildJsonArray {
+            record.samples.forEach { sample ->
+                add(buildJsonObject {
+                    put("time", sample.time.toEpochMilli())
+                    put("watts", sample.power.inWatts)
+                })
+            }
+        })
+    }
+
+    override fun extractStartTimeMs(record: PowerRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: PowerRecord): Long = record.endTime.toEpochMilli()
+}
+
+object SpeedRecordAdapter : HealthRecordAdapter<SpeedRecord> {
+    override val recordType: String = "speed"
+
+    override fun serializePayload(record: SpeedRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        put("samples", buildJsonArray {
+            record.samples.forEach { sample ->
+                add(buildJsonObject {
+                    put("time", sample.time.toEpochMilli())
+                    put("metersPerSecond", sample.speed.inMetersPerSecond)
+                })
+            }
+        })
+    }
+
+    override fun extractStartTimeMs(record: SpeedRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: SpeedRecord): Long = record.endTime.toEpochMilli()
+}
+
+object StepsCadenceRecordAdapter : HealthRecordAdapter<StepsCadenceRecord> {
+    override val recordType: String = "steps_cadence"
+
+    override fun serializePayload(record: StepsCadenceRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        put("samples", buildJsonArray {
+            record.samples.forEach { sample ->
+                add(buildJsonObject {
+                    put("time", sample.time.toEpochMilli())
+                    put("stepsPerMinute", sample.rate)
+                })
+            }
+        })
+    }
+
+    override fun extractStartTimeMs(record: StepsCadenceRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: StepsCadenceRecord): Long = record.endTime.toEpochMilli()
 }
 
 fun <T : Record> T.toArchiveEntity(

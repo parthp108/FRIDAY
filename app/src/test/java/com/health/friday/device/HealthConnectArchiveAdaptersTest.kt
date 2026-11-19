@@ -19,7 +19,11 @@ class HealthConnectArchiveAdaptersTest {
             BasalMetabolicRateRecordAdapter.recordType,
             BodyFatRecordAdapter.recordType,
             HeightRecordAdapter.recordType,
-            Vo2MaxRecordAdapter.recordType
+            Vo2MaxRecordAdapter.recordType,
+            ExerciseSessionRecordAdapter.recordType,
+            PowerRecordAdapter.recordType,
+            SpeedRecordAdapter.recordType,
+            StepsCadenceRecordAdapter.recordType
         )
 
         assertEquals(types.size, types.distinct().size)
@@ -35,5 +39,9 @@ class HealthConnectArchiveAdaptersTest {
         assertEquals("body_fat", BodyFatRecordAdapter.recordType)
         assertEquals("height", HeightRecordAdapter.recordType)
         assertEquals("vo2_max", Vo2MaxRecordAdapter.recordType)
+        assertEquals("exercise_session", ExerciseSessionRecordAdapter.recordType)
+        assertEquals("power", PowerRecordAdapter.recordType)
+        assertEquals("speed", SpeedRecordAdapter.recordType)
+        assertEquals("steps_cadence", StepsCadenceRecordAdapter.recordType)
     }
 }
