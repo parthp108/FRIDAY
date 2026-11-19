@@ -31,7 +31,14 @@ class HealthConnectArchiveAdaptersTest {
             RestingHeartRateRecordAdapter.recordType,
             HeartRateVariabilityRecordAdapter.recordType,
             NutritionRecordAdapter.recordType,
-            HydrationRecordAdapter.recordType
+            HydrationRecordAdapter.recordType,
+            BodyTemperatureRecordAdapter.recordType,
+            BodyWaterMassRecordAdapter.recordType,
+            BoneMassRecordAdapter.recordType,
+            CyclingPedalingCadenceRecordAdapter.recordType,
+            ElevationGainedRecordAdapter.recordType,
+            LeanBodyMassRecordAdapter.recordType,
+            WheelchairPushesRecordAdapter.recordType
         )
 
         assertEquals(types.size, types.distinct().size)
@@ -59,5 +66,12 @@ class HealthConnectArchiveAdaptersTest {
         assertEquals("heart_rate_variability_rmssd", HeartRateVariabilityRecordAdapter.recordType)
         assertEquals("nutrition", NutritionRecordAdapter.recordType)
         assertEquals("hydration", HydrationRecordAdapter.recordType)
+        assertEquals("body_temperature", BodyTemperatureRecordAdapter.recordType)
+        assertEquals("body_water_mass", BodyWaterMassRecordAdapter.recordType)
+        assertEquals("bone_mass", BoneMassRecordAdapter.recordType)
+        assertEquals("cycling_pedaling_cadence", CyclingPedalingCadenceRecordAdapter.recordType)
+        assertEquals("elevation_gained", ElevationGainedRecordAdapter.recordType)
+        assertEquals("lean_body_mass", LeanBodyMassRecordAdapter.recordType)
+        assertEquals("wheelchair_pushes", WheelchairPushesRecordAdapter.recordType)
     }
 }

@@ -5,7 +5,12 @@ import androidx.health.connect.client.records.BasalMetabolicRateRecord
 import androidx.health.connect.client.records.BloodGlucoseRecord
 import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.BodyFatRecord
+import androidx.health.connect.client.records.BodyTemperatureRecord
+import androidx.health.connect.client.records.BodyWaterMassRecord
+import androidx.health.connect.client.records.BoneMassRecord
+import androidx.health.connect.client.records.CyclingPedalingCadenceRecord
 import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ElevationGainedRecord
 import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
@@ -13,6 +18,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
 import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.NutritionRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.PowerRecord
@@ -26,6 +32,7 @@ import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.records.WheelchairPushesRecord
 import com.health.friday.data.local.HealthRecordArchiveEntity
 import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
 import com.health.friday.shared.sync.cloud.HealthRecordSyncPayload
@@ -535,6 +542,112 @@ object HydrationRecordAdapter : HealthRecordAdapter<HydrationRecord> {
 
     override fun extractStartTimeMs(record: HydrationRecord): Long = record.startTime.toEpochMilli()
     override fun extractEndTimeMs(record: HydrationRecord): Long = record.endTime.toEpochMilli()
+}
+
+object BodyTemperatureRecordAdapter : HealthRecordAdapter<BodyTemperatureRecord> {
+    override val recordType: String = "body_temperature"
+
+    override fun serializePayload(record: BodyTemperatureRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("temperatureCelsius", record.temperature.inCelsius)
+        put("measurementLocation", record.measurementLocation)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: BodyTemperatureRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: BodyTemperatureRecord): Long = record.time.toEpochMilli()
+}
+
+object BodyWaterMassRecordAdapter : HealthRecordAdapter<BodyWaterMassRecord> {
+    override val recordType: String = "body_water_mass"
+
+    override fun serializePayload(record: BodyWaterMassRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("massKg", record.mass.inKilograms)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: BodyWaterMassRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: BodyWaterMassRecord): Long = record.time.toEpochMilli()
+}
+
+object BoneMassRecordAdapter : HealthRecordAdapter<BoneMassRecord> {
+    override val recordType: String = "bone_mass"
+
+    override fun serializePayload(record: BoneMassRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("massKg", record.mass.inKilograms)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: BoneMassRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: BoneMassRecord): Long = record.time.toEpochMilli()
+}
+
+object CyclingPedalingCadenceRecordAdapter : HealthRecordAdapter<CyclingPedalingCadenceRecord> {
+    override val recordType: String = "cycling_pedaling_cadence"
+
+    override fun serializePayload(record: CyclingPedalingCadenceRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        put("samples", buildJsonArray {
+            record.samples.forEach { sample ->
+                add(buildJsonObject {
+                    put("time", sample.time.toEpochMilli())
+                    put("revolutionsPerMinute", sample.revolutionsPerMinute)
+                })
+            }
+        })
+    }
+
+    override fun extractStartTimeMs(record: CyclingPedalingCadenceRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: CyclingPedalingCadenceRecord): Long = record.endTime.toEpochMilli()
+}
+
+object ElevationGainedRecordAdapter : HealthRecordAdapter<ElevationGainedRecord> {
+    override val recordType: String = "elevation_gained"
+
+    override fun serializePayload(record: ElevationGainedRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        put("elevationMeters", record.elevation.inMeters)
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: ElevationGainedRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: ElevationGainedRecord): Long = record.endTime.toEpochMilli()
+}
+
+object LeanBodyMassRecordAdapter : HealthRecordAdapter<LeanBodyMassRecord> {
+    override val recordType: String = "lean_body_mass"
+
+    override fun serializePayload(record: LeanBodyMassRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("massKg", record.mass.inKilograms)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: LeanBodyMassRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: LeanBodyMassRecord): Long = record.time.toEpochMilli()
+}
+
+object WheelchairPushesRecordAdapter : HealthRecordAdapter<WheelchairPushesRecord> {
+    override val recordType: String = "wheelchair_pushes"
+
+    override fun serializePayload(record: WheelchairPushesRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        put("count", record.count)
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: WheelchairPushesRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: WheelchairPushesRecord): Long = record.endTime.toEpochMilli()
 }
 
 fun <T : Record> T.toArchiveEntity(
