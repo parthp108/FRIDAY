@@ -17,6 +17,9 @@ import java.time.LocalDate
 class FakeMealDaoForPredictive : MealDao {
     val meals = mutableListOf<Meal>()
 
+    override suspend fun getBySyncId(syncId: String): Meal? = meals.find { it.syncId == syncId }
+    override suspend fun deleteBySyncId(syncId: String): Int = 0
+
     override suspend fun insertMeal(meal: Meal): Long = 1L
     override suspend fun updateMeal(meal: Meal) {}
     override suspend fun deleteMeal(meal: Meal) {}

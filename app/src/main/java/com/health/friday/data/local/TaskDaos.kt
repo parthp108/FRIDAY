@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TodoDao {
 
+    @Query("SELECT * FROM todo_items WHERE syncId = :syncId LIMIT 1")
+    suspend fun getBySyncId(syncId: String): TodoItem?
+
+    @Query("DELETE FROM todo_items WHERE syncId = :syncId")
+    suspend fun deleteBySyncId(syncId: String): Int
+
     @Insert
     suspend fun insert(item: TodoItem): Long
 
@@ -29,6 +35,12 @@ interface TodoDao {
 @Dao
 interface GoalDao {
 
+    @Query("SELECT * FROM goals WHERE syncId = :syncId LIMIT 1")
+    suspend fun getBySyncId(syncId: String): Goal?
+
+    @Query("DELETE FROM goals WHERE syncId = :syncId")
+    suspend fun deleteBySyncId(syncId: String): Int
+
     @Insert
     suspend fun insert(goal: Goal): Long
 
@@ -44,6 +56,12 @@ interface GoalDao {
 
 @Dao
 interface JournalDao {
+
+    @Query("SELECT * FROM journal_entries WHERE syncId = :syncId LIMIT 1")
+    suspend fun getBySyncId(syncId: String): JournalEntry?
+
+    @Query("DELETE FROM journal_entries WHERE syncId = :syncId")
+    suspend fun deleteBySyncId(syncId: String): Int
 
     @Insert
     suspend fun insert(entry: JournalEntry): Long

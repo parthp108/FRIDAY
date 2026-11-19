@@ -17,6 +17,14 @@ class FakeJournalDao : JournalDao {
     val entries = mutableListOf<JournalEntry>()
     private var idCounter = 1L
 
+    override suspend fun getBySyncId(syncId: String): JournalEntry? = entries.find { it.syncId == syncId }
+
+    override suspend fun deleteBySyncId(syncId: String): Int {
+        val count = entries.count { it.syncId == syncId }
+        entries.removeAll { it.syncId == syncId }
+        return count
+    }
+
     override suspend fun insert(entry: JournalEntry): Long {
         val inserted = entry.copy(id = idCounter++)
         entries.add(inserted)

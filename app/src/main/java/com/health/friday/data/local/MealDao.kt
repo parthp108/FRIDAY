@@ -10,6 +10,12 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MealDao {
 
+    @Query("SELECT * FROM meals WHERE syncId = :syncId LIMIT 1")
+    suspend fun getBySyncId(syncId: String): Meal?
+
+    @Query("DELETE FROM meals WHERE syncId = :syncId")
+    suspend fun deleteBySyncId(syncId: String): Int
+
     @Insert
     suspend fun insertMeal(meal: Meal): Long
 

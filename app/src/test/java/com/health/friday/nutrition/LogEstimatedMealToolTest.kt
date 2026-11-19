@@ -21,6 +21,14 @@ class FakeMealDao : MealDao {
     private val meals = mutableListOf<Meal>()
     private var idCounter = 1L
 
+    override suspend fun getBySyncId(syncId: String): Meal? = meals.find { it.syncId == syncId }
+
+    override suspend fun deleteBySyncId(syncId: String): Int {
+        val count = meals.count { it.syncId == syncId }
+        meals.removeAll { it.syncId == syncId }
+        return count
+    }
+
     override suspend fun insertMeal(meal: Meal): Long {
         val inserted = meal.copy(id = idCounter++)
         meals.add(inserted)
