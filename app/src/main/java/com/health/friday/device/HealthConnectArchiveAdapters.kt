@@ -2,15 +2,23 @@ package com.health.friday.device
 
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseRouteResult
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RespiratoryRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsCadenceRecord
@@ -357,6 +365,176 @@ object StepsCadenceRecordAdapter : HealthRecordAdapter<StepsCadenceRecord> {
 
     override fun extractStartTimeMs(record: StepsCadenceRecord): Long = record.startTime.toEpochMilli()
     override fun extractEndTimeMs(record: StepsCadenceRecord): Long = record.endTime.toEpochMilli()
+}
+
+object BloodGlucoseRecordAdapter : HealthRecordAdapter<BloodGlucoseRecord> {
+    override val recordType: String = "blood_glucose"
+
+    override fun serializePayload(record: BloodGlucoseRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("glucoseMmolPerL", record.level.inMillimolesPerLiter)
+        put("glucoseMgPerDl", record.level.inMilligramsPerDeciliter)
+        put("specimenSource", record.specimenSource)
+        put("mealType", record.mealType)
+        put("relationToMeal", record.relationToMeal)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: BloodGlucoseRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: BloodGlucoseRecord): Long = record.time.toEpochMilli()
+}
+
+object BloodPressureRecordAdapter : HealthRecordAdapter<BloodPressureRecord> {
+    override val recordType: String = "blood_pressure"
+
+    override fun serializePayload(record: BloodPressureRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("systolicMmHg", record.systolic.inMillimetersOfMercury)
+        put("diastolicMmHg", record.diastolic.inMillimetersOfMercury)
+        put("bodyPosition", record.bodyPosition)
+        put("measurementLocation", record.measurementLocation)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: BloodPressureRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: BloodPressureRecord): Long = record.time.toEpochMilli()
+}
+
+object OxygenSaturationRecordAdapter : HealthRecordAdapter<OxygenSaturationRecord> {
+    override val recordType: String = "oxygen_saturation"
+
+    override fun serializePayload(record: OxygenSaturationRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("percentage", record.percentage.value)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: OxygenSaturationRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: OxygenSaturationRecord): Long = record.time.toEpochMilli()
+}
+
+object RespiratoryRateRecordAdapter : HealthRecordAdapter<RespiratoryRateRecord> {
+    override val recordType: String = "respiratory_rate"
+
+    override fun serializePayload(record: RespiratoryRateRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("breathsPerMinute", record.rate)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: RespiratoryRateRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: RespiratoryRateRecord): Long = record.time.toEpochMilli()
+}
+
+object RestingHeartRateRecordAdapter : HealthRecordAdapter<RestingHeartRateRecord> {
+    override val recordType: String = "resting_heart_rate"
+
+    override fun serializePayload(record: RestingHeartRateRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("beatsPerMinute", record.beatsPerMinute)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: RestingHeartRateRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: RestingHeartRateRecord): Long = record.time.toEpochMilli()
+}
+
+object HeartRateVariabilityRecordAdapter : HealthRecordAdapter<HeartRateVariabilityRmssdRecord> {
+    override val recordType: String = "heart_rate_variability_rmssd"
+
+    override fun serializePayload(record: HeartRateVariabilityRmssdRecord): JsonObject = buildJsonObject {
+        put("time", record.time.toEpochMilli())
+        put("rmssdMilliseconds", record.heartRateVariabilityMillis)
+        record.zoneOffset?.let { put("zoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: HeartRateVariabilityRmssdRecord): Long = record.time.toEpochMilli()
+    override fun extractEndTimeMs(record: HeartRateVariabilityRmssdRecord): Long = record.time.toEpochMilli()
+}
+
+object NutritionRecordAdapter : HealthRecordAdapter<NutritionRecord> {
+    override val recordType: String = "nutrition"
+
+    override fun serializePayload(record: NutritionRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+
+        record.name?.let { put("name", it) }
+        put("mealType", record.mealType)
+
+        record.energy?.let { put("energyKcal", it.inKilocalories) }
+        record.energyFromFat?.let { put("energyFromFatKcal", it.inKilocalories) }
+
+        val massFields = listOf(
+            "biotinGrams" to record.biotin?.inGrams,
+            "caffeineGrams" to record.caffeine?.inGrams,
+            "calciumGrams" to record.calcium?.inGrams,
+            "chlorideGrams" to record.chloride?.inGrams,
+            "cholesterolGrams" to record.cholesterol?.inGrams,
+            "chromiumGrams" to record.chromium?.inGrams,
+            "copperGrams" to record.copper?.inGrams,
+            "dietaryFiberGrams" to record.dietaryFiber?.inGrams,
+            "folateGrams" to record.folate?.inGrams,
+            "folicAcidGrams" to record.folicAcid?.inGrams,
+            "iodineGrams" to record.iodine?.inGrams,
+            "ironGrams" to record.iron?.inGrams,
+            "magnesiumGrams" to record.magnesium?.inGrams,
+            "manganeseGrams" to record.manganese?.inGrams,
+            "molybdenumGrams" to record.molybdenum?.inGrams,
+            "monounsaturatedFatGrams" to record.monounsaturatedFat?.inGrams,
+            "niacinGrams" to record.niacin?.inGrams,
+            "pantothenicAcidGrams" to record.pantothenicAcid?.inGrams,
+            "phosphorusGrams" to record.phosphorus?.inGrams,
+            "polyunsaturatedFatGrams" to record.polyunsaturatedFat?.inGrams,
+            "potassiumGrams" to record.potassium?.inGrams,
+            "proteinGrams" to record.protein?.inGrams,
+            "riboflavinGrams" to record.riboflavin?.inGrams,
+            "saturatedFatGrams" to record.saturatedFat?.inGrams,
+            "seleniumGrams" to record.selenium?.inGrams,
+            "sodiumGrams" to record.sodium?.inGrams,
+            "sugarGrams" to record.sugar?.inGrams,
+            "thiaminGrams" to record.thiamin?.inGrams,
+            "totalCarbohydrateGrams" to record.totalCarbohydrate?.inGrams,
+            "totalFatGrams" to record.totalFat?.inGrams,
+            "transFatGrams" to record.transFat?.inGrams,
+            "unsaturatedFatGrams" to record.unsaturatedFat?.inGrams,
+            "vitaminAGrams" to record.vitaminA?.inGrams,
+            "vitaminB12Grams" to record.vitaminB12?.inGrams,
+            "vitaminB6Grams" to record.vitaminB6?.inGrams,
+            "vitaminCGrams" to record.vitaminC?.inGrams,
+            "vitaminDGrams" to record.vitaminD?.inGrams,
+            "vitaminEGrams" to record.vitaminE?.inGrams,
+            "vitaminKGrams" to record.vitaminK?.inGrams,
+            "zincGrams" to record.zinc?.inGrams
+        )
+
+        massFields.forEach { (key, value) ->
+            value?.let { put(key, it) }
+        }
+    }
+
+    override fun extractStartTimeMs(record: NutritionRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: NutritionRecord): Long = record.endTime.toEpochMilli()
+}
+
+object HydrationRecordAdapter : HealthRecordAdapter<HydrationRecord> {
+    override val recordType: String = "hydration"
+
+    override fun serializePayload(record: HydrationRecord): JsonObject = buildJsonObject {
+        put("startTime", record.startTime.toEpochMilli())
+        put("endTime", record.endTime.toEpochMilli())
+        put("volumeLiters", record.volume.inLiters)
+        put("volumeMilliliters", record.volume.inMilliliters)
+
+        record.startZoneOffset?.let { put("startZoneOffset", it.toString()) }
+        record.endZoneOffset?.let { put("endZoneOffset", it.toString()) }
+    }
+
+    override fun extractStartTimeMs(record: HydrationRecord): Long = record.startTime.toEpochMilli()
+    override fun extractEndTimeMs(record: HydrationRecord): Long = record.endTime.toEpochMilli()
 }
 
 fun <T : Record> T.toArchiveEntity(

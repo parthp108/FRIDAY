@@ -6,14 +6,22 @@ import androidx.health.connect.client.changes.UpsertionChange
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.ActiveCaloriesBurnedRecord
 import androidx.health.connect.client.records.BasalMetabolicRateRecord
+import androidx.health.connect.client.records.BloodGlucoseRecord
+import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.BodyFatRecord
 import androidx.health.connect.client.records.DistanceRecord
 import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.FloorsClimbedRecord
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
 import androidx.health.connect.client.records.HeightRecord
+import androidx.health.connect.client.records.HydrationRecord
+import androidx.health.connect.client.records.NutritionRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.PowerRecord
 import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RespiratoryRateRecord
+import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.SpeedRecord
 import androidx.health.connect.client.records.StepsCadenceRecord
@@ -23,7 +31,6 @@ import androidx.health.connect.client.records.Vo2MaxRecord
 import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
-import androidx.health.connect.client.response.ChangesResponse
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.health.friday.data.local.HealthConnectArchiveDao
 import com.health.friday.data.local.HealthConnectSyncStateEntity
@@ -98,7 +105,15 @@ class HealthConnectArchiveSyncer(
                 RecordSyncTarget(ExerciseSessionRecord::class, ExerciseSessionRecordAdapter),
                 RecordSyncTarget(PowerRecord::class, PowerRecordAdapter),
                 RecordSyncTarget(SpeedRecord::class, SpeedRecordAdapter),
-                RecordSyncTarget(StepsCadenceRecord::class, StepsCadenceRecordAdapter)
+                RecordSyncTarget(StepsCadenceRecord::class, StepsCadenceRecordAdapter),
+                RecordSyncTarget(BloodGlucoseRecord::class, BloodGlucoseRecordAdapter),
+                RecordSyncTarget(BloodPressureRecord::class, BloodPressureRecordAdapter),
+                RecordSyncTarget(OxygenSaturationRecord::class, OxygenSaturationRecordAdapter),
+                RecordSyncTarget(RespiratoryRateRecord::class, RespiratoryRateRecordAdapter),
+                RecordSyncTarget(RestingHeartRateRecord::class, RestingHeartRateRecordAdapter),
+                RecordSyncTarget(HeartRateVariabilityRmssdRecord::class, HeartRateVariabilityRecordAdapter),
+                RecordSyncTarget(NutritionRecord::class, NutritionRecordAdapter),
+                RecordSyncTarget(HydrationRecord::class, HydrationRecordAdapter)
             )
 
             val granted = healthConnectRepo.getGrantedPermissions()
@@ -137,17 +152,14 @@ class HealthConnectArchiveSyncer(
 
         // 1. Ensure Changes Token exists BEFORE starting baseline import
         if (state.changesToken.isNullOrBlank()) {
-            val token = try {
-                client.getChangesToken(ChangesTokenRequest(recordTypes = setOf(kclass)))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                null
-            }
+            val token = client.getChangesToken(
+                ChangesTokenRequest(recordTypes = setOf(kclass))
+            )
 
-            if (token.isNullOrBlank()) {
-                // Do not proceed with baseline import without a valid Changes Token
-                return 0
+            if (token.isBlank()) {
+                throw IllegalStateException(
+                    "Health Connect returned an empty changes token for $typeName"
+                )
             }
 
             state = state.copy(changesToken = token)

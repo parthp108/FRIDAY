@@ -23,7 +23,15 @@ class HealthConnectArchiveAdaptersTest {
             ExerciseSessionRecordAdapter.recordType,
             PowerRecordAdapter.recordType,
             SpeedRecordAdapter.recordType,
-            StepsCadenceRecordAdapter.recordType
+            StepsCadenceRecordAdapter.recordType,
+            BloodGlucoseRecordAdapter.recordType,
+            BloodPressureRecordAdapter.recordType,
+            OxygenSaturationRecordAdapter.recordType,
+            RespiratoryRateRecordAdapter.recordType,
+            RestingHeartRateRecordAdapter.recordType,
+            HeartRateVariabilityRecordAdapter.recordType,
+            NutritionRecordAdapter.recordType,
+            HydrationRecordAdapter.recordType
         )
 
         assertEquals(types.size, types.distinct().size)
@@ -43,5 +51,13 @@ class HealthConnectArchiveAdaptersTest {
         assertEquals("power", PowerRecordAdapter.recordType)
         assertEquals("speed", SpeedRecordAdapter.recordType)
         assertEquals("steps_cadence", StepsCadenceRecordAdapter.recordType)
+        assertEquals("blood_glucose", BloodGlucoseRecordAdapter.recordType)
+        assertEquals("blood_pressure", BloodPressureRecordAdapter.recordType)
+        assertEquals("oxygen_saturation", OxygenSaturationRecordAdapter.recordType)
+        assertEquals("respiratory_rate", RespiratoryRateRecordAdapter.recordType)
+        assertEquals("resting_heart_rate", RestingHeartRateRecordAdapter.recordType)
+        assertEquals("heart_rate_variability_rmssd", HeartRateVariabilityRecordAdapter.recordType)
+        assertEquals("nutrition", NutritionRecordAdapter.recordType)
+        assertEquals("hydration", HydrationRecordAdapter.recordType)
     }
 }
