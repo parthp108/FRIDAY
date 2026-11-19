@@ -25,6 +25,7 @@ enum class DesktopNavTab(val title: String, val icon: ImageVector) {
     HEALTH("Health & Telemetry", Icons.Default.Favorite),
     NUTRITION("Nutrition & Meals", Icons.Default.Restaurant),
     TASKS("Tasks & Checklist", Icons.Default.CheckCircle),
+    JOURNAL("Journal & Reflection", Icons.Default.MenuBook),
     ASSISTANT("AI Assistant", Icons.Default.SmartToy),
     DIAGNOSTICS("Diagnostics", Icons.Default.Biotech),
     SETTINGS("Settings & Persona", Icons.Default.Settings)

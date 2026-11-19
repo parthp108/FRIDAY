@@ -42,6 +42,18 @@ class HudScreenModel(
         }
 
         screenModelScope.launch(Dispatchers.IO) {
+            repository.goals.collect { g ->
+                updateState { it.copy(goals = g) }
+            }
+        }
+
+        screenModelScope.launch(Dispatchers.IO) {
+            repository.journalEntries.collect { entries ->
+                updateState { it.copy(journalEntries = entries) }
+            }
+        }
+
+        screenModelScope.launch(Dispatchers.IO) {
             repository.reminders.collect { r ->
                 updateState { it.copy(reminders = r) }
             }
@@ -115,6 +127,8 @@ class HudScreenModel(
 
             is HudIntent.AddTask -> repository.addTask(intent.taskTitle)
             is HudIntent.ToggleTask -> repository.toggleTask(intent.task)
+            is HudIntent.ToggleGoal -> repository.toggleGoal(intent.goal)
+            is HudIntent.AddJournalEntry -> repository.addJournalEntry(intent.text)
             is HudIntent.AddReminder -> repository.addReminder()
             is HudIntent.LogMeal -> repository.logMeal(intent.name, intent.cals, intent.p, intent.c, intent.f)
             is HudIntent.AddWater -> repository.addWater(intent.amountMl)

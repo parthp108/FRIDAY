@@ -25,6 +25,7 @@ import com.health.friday.desktop.ui.components.StatCard
 import com.health.friday.shared.models.DailySignalDto
 import com.health.friday.shared.models.FridayReminderDto
 import com.health.friday.shared.models.FridayTaskDto
+import com.health.friday.shared.sync.cloud.GoalSyncPayload
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,8 +35,10 @@ fun DesktopTasksScreen(
     tasks: List<FridayTaskDto>,
     reminders: List<FridayReminderDto>,
     signals: DailySignalDto,
+    goals: List<GoalSyncPayload> = emptyList(),
     onAddTask: (String) -> Unit,
     onToggleTask: (FridayTaskDto) -> Unit,
+    onToggleGoal: (GoalSyncPayload) -> Unit = {},
     onAddReminder: (String, Long) -> Unit
 ) {
     var todoInput by remember { mutableStateOf("") }
@@ -167,6 +170,28 @@ fun DesktopTasksScreen(
                             modifier = Modifier.height(54.dp)
                         ) {
                             Text("Set Goal")
+                        }
+                    }
+                    if (goals.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text("Saved Goals (${goals.size})", color = Color(0xFFCBD5E1), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        goals.forEach { goal ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = goal.isDone,
+                                    onCheckedChange = { onToggleGoal(goal) },
+                                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFFF97316))
+                                )
+                                Text(
+                                    text = goal.title,
+                                    color = if (goal.isDone) Color(0xFF64748B) else Color.White,
+                                    fontSize = 13.sp,
+                                    textDecoration = if (goal.isDone) TextDecoration.LineThrough else TextDecoration.None
+                                )
+                            }
                         }
                     }
                 }

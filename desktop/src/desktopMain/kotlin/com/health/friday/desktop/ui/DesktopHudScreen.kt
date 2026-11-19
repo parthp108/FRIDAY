@@ -23,6 +23,7 @@ import com.health.friday.desktop.ui.screens.*
 import com.health.friday.desktop.ui.spatial.glassAssembleEntrance
 import com.health.friday.desktop.ui.spatial.spatialParallax
 import com.health.friday.desktop.ui.spatial.spatialZTransition
+import com.health.friday.shared.models.JournalEntryDto
 import kotlinx.coroutines.delay
 import org.koin.core.context.GlobalContext
 
@@ -116,9 +117,23 @@ class DesktopHudScreen : Screen {
                                     }
                                     DesktopNavTab.TASKS -> DesktopTasksScreen(
                                         state.tasks, state.reminders, state.dailySignals,
+                                        goals = state.goals,
                                         onAddTask = { screenModel.processIntent(HudIntent.AddTask(it)) },
                                         onToggleTask = { screenModel.processIntent(HudIntent.ToggleTask(it)) },
+                                        onToggleGoal = { screenModel.processIntent(HudIntent.ToggleGoal(it)) },
                                         onAddReminder = { t, ms -> screenModel.processIntent(HudIntent.AddReminder(t, ms)) }
+                                    )
+                                    DesktopNavTab.JOURNAL -> DesktopJournalScreen(
+                                        entries = state.journalEntries.map { entry ->
+                                            JournalEntryDto(
+                                                id = entry.syncId,
+                                                content = entry.text,
+                                                timestamp = entry.createdAt
+                                            )
+                                        },
+                                        onAddJournalEntry = {
+                                            screenModel.processIntent(HudIntent.AddJournalEntry(it))
+                                        }
                                     )
                                     DesktopNavTab.ASSISTANT -> DesktopAssistantScreen(
                                         state.messages, state.sessions, state.currentSessionId,

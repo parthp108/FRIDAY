@@ -9,6 +9,7 @@ import com.health.friday.desktop.sync.cloud.DesktopCloudSyncRuntime
 import com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult
 import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
 import com.health.friday.shared.sync.cloud.GoalSyncPayload
+import com.health.friday.shared.sync.cloud.JournalSyncPayload
 import com.health.friday.shared.sync.cloud.MealSyncPayload
 import com.health.friday.shared.sync.cloud.TodoSyncPayload
 import com.health.friday.shared.sync.cloud.WaterSyncPayload
@@ -191,6 +192,8 @@ class DesktopRepository(
     val meals = nutritionRepo.meals
     val dailySignals = healthRepo.signals
     val tasks = tasksRepo.tasks
+    val goals = tasksRepo.goals
+    val journalEntries = tasksRepo.journalEntries
     val reminders = tasksRepo.reminders
 
     val apiKey = MutableStateFlow("")
@@ -468,6 +471,16 @@ class DesktopRepository(
         enqueueDesktopUpsert(CloudSyncEntityTypes.TODO, task.id, payload, "Task update")
     }
 
+    /** Toggle a cloud-backed goal without changing its stable sync identity. */
+    fun toggleGoal(goal: GoalSyncPayload) {
+        if (goal.syncId.isBlank()) return
+        val updated = goal.copy(isDone = !goal.isDone)
+        val payload = cloudPayloadJson.encodeToJsonElement(
+            GoalSyncPayload.serializer(), updated
+        ).jsonObject
+        enqueueDesktopUpsert(CloudSyncEntityTypes.GOAL, goal.syncId, payload, "Goal update")
+    }
+
     /** Desktop meal entries use the shared sync ID, not a local database row ID. */
     fun logMeal(name: String, calories: Int, protein: Float, carbs: Float, fat: Float) {
         val cleanName = name.trim()
@@ -502,6 +515,24 @@ class DesktopRepository(
             WaterSyncPayload(syncId = id, amountMl = amountMl, timestamp = now)
         ).jsonObject
         enqueueDesktopUpsert(CloudSyncEntityTypes.WATER_ENTRY, id, payload, "Water entry")
+    }
+
+    /** Save a desktop journal entry into the same encrypted entity stream as phone entries. */
+    fun addJournalEntry(text: String) {
+        val cleanText = text.trim()
+        if (cleanText.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val id = Ids.randomHex(16)
+        val payload = cloudPayloadJson.encodeToJsonElement(
+            JournalSyncPayload.serializer(),
+            JournalSyncPayload(
+                syncId = id,
+                text = cleanText,
+                feedback = null,
+                createdAt = now
+            )
+        ).jsonObject
+        enqueueDesktopUpsert(CloudSyncEntityTypes.JOURNAL_ENTRY, id, payload, "Journal entry")
     }
 
     fun deleteTask(taskId: String) = enqueueDesktopDelete(CloudSyncEntityTypes.TODO, taskId, "Task deletion")

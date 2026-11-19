@@ -23,7 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.health.friday.shared.models.JournalEntryDto
-import com.health.friday.shared.models.JournalSentiment
+
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,10 +34,9 @@ fun DesktopJournalScreen(
     onAddJournalEntry: (String) -> Unit = {}
 ) {
     var entryText by remember { mutableStateOf("") }
-    var localEntries by remember { mutableStateOf(emptyList<JournalEntryDto>()) }
 
-    val allEntries = remember(entries, localEntries) {
-        (localEntries + entries).sortedByDescending { it.timestamp }
+    val allEntries = remember(entries) {
+        entries.sortedByDescending { it.timestamp }
     }
 
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()) }
@@ -48,7 +47,7 @@ fun DesktopJournalScreen(
             Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("Daily Mind Reflection & Journaling", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Text("Mirrored live with phone database via USB bridge.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    Text("Journal entries sync through encrypted Google Drive.", color = Color(0xFF94A3B8), fontSize = 12.sp)
                     Spacer(modifier = Modifier.height(10.dp))
 
                     OutlinedTextField(
@@ -64,14 +63,7 @@ fun DesktopJournalScreen(
                                         false
                                     } else {
                                         if (entryText.isNotBlank()) {
-                                            val newEntry = JournalEntryDto(
-                                                id = "j_${System.currentTimeMillis()}",
-                                                content = entryText,
-                                                sentiment = JournalSentiment.NEUTRAL,
-                                                timestamp = System.currentTimeMillis()
-                                            )
-                                            localEntries = listOf(newEntry) + localEntries
-                                            onAddJournalEntry(entryText)
+                                            onAddJournalEntry(entryText.trim())
                                             entryText = ""
                                         }
                                         true
@@ -89,14 +81,7 @@ fun DesktopJournalScreen(
                         Button(
                             onClick = {
                                 if (entryText.isNotBlank()) {
-                                    val newEntry = JournalEntryDto(
-                                        id = "j_${System.currentTimeMillis()}",
-                                        content = entryText,
-                                        sentiment = JournalSentiment.NEUTRAL,
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                    localEntries = listOf(newEntry) + localEntries
-                                    onAddJournalEntry(entryText)
+                                    onAddJournalEntry(entryText.trim())
                                     entryText = ""
                                 }
                             },
@@ -109,14 +94,7 @@ fun DesktopJournalScreen(
                         Button(
                             onClick = {
                                 if (entryText.isNotBlank()) {
-                                    val newEntry = JournalEntryDto(
-                                        id = "j_${System.currentTimeMillis()}",
-                                        content = entryText,
-                                        sentiment = JournalSentiment.ENERGETIC,
-                                        timestamp = System.currentTimeMillis()
-                                    )
-                                    localEntries = listOf(newEntry) + localEntries
-                                    onAddJournalEntry(entryText)
+                                    onAddJournalEntry(entryText.trim())
                                     entryText = ""
                                 }
                             },

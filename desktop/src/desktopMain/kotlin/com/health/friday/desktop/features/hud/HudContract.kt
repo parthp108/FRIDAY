@@ -2,6 +2,8 @@ package com.health.friday.desktop.features.hud
 
 import com.health.friday.desktop.ui.components.DesktopNavTab
 import com.health.friday.shared.models.*
+import com.health.friday.shared.sync.cloud.GoalSyncPayload
+import com.health.friday.shared.sync.cloud.JournalSyncPayload
 
 data class HudState(
     val selectedTab: DesktopNavTab = DesktopNavTab.HOME,
@@ -15,6 +17,8 @@ data class HudState(
     val sessions: List<ChatSessionDto> = emptyList(),
     val currentSessionId: String = "",
     val tasks: List<FridayTaskDto> = emptyList(),
+    val goals: List<GoalSyncPayload> = emptyList(),
+    val journalEntries: List<JournalSyncPayload> = emptyList(),
     val reminders: List<FridayReminderDto> = emptyList(),
     val meals: List<FridayMealDto> = emptyList(),
     val dailySignals: DailySignalDto = DailySignalDto()
@@ -35,6 +39,8 @@ sealed class HudIntent {
     // Tasks & Health Actions
     data class AddTask(val taskTitle: String) : HudIntent()
     data class ToggleTask(val task: FridayTaskDto) : HudIntent()
+    data class ToggleGoal(val goal: GoalSyncPayload) : HudIntent()
+    data class AddJournalEntry(val text: String) : HudIntent()
     data class AddReminder(val title: String, val timeMs: Long) : HudIntent()
     data class LogMeal(val name: String, val cals: Int, val p: Float, val c: Float, val f: Float) : HudIntent()
     data class AddWater(val amountMl: Int) : HudIntent()
