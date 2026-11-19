@@ -56,7 +56,6 @@ internal class DesktopDriveVaultClient {
         keyId: String
     ): String {
         val fileName = "$RECOVERY_FILE_PREFIX$createdAtMs$RECOVERY_FILE_SUFFIX"
-        val boundary = "friday_${UUID.randomUUID().toString().replace("-", "")}"
         val metadata = buildJsonObject {
             put("name", fileName)
             put("mimeType", "application/json")
@@ -70,30 +69,43 @@ internal class DesktopDriveVaultClient {
                 }
             )
         }
-        val multipart = buildString {
-            append("--$boundary\r\n")
-            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-            append(metadata.toString())
-            append("\r\n--$boundary\r\n")
-            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-            append(content)
-            append("\r\n--$boundary--\r\n")
-        }.toByteArray(StandardCharsets.UTF_8)
+        return uploadMultipartJson(accessToken, metadata.toString(), content)
+    }
 
-        try {
-            val response = request(
-                accessToken = accessToken,
-                method = "POST",
-                url = "$UPLOAD_API/files?uploadType=multipart&fields=id,name",
-                contentType = "multipart/related; boundary=$boundary",
-                body = multipart
+    fun uploadBatch(
+        accessToken: String,
+        folderId: String,
+        batchId: String,
+        content: String
+    ): String {
+        require(batchId.isNotBlank())
+        val metadata = buildJsonObject {
+            put("name", "$BATCH_FILE_PREFIX$batchId$BATCH_FILE_SUFFIX")
+            put("mimeType", "application/json")
+            put("parents", JsonArray(listOf(JsonPrimitive(folderId))))
+            put(
+                "appProperties",
+                buildJsonObject {
+                    put("fridayApp", "FRIDAY")
+                    put("fridayKind", "sync-batch")
+                    put("batchId", batchId)
+                }
             )
-            return json.parseToJsonElement(response).jsonObject["id"]
-                ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-                ?: throw IOException("Google Drive upload returned no file ID.")
-        } finally {
-            multipart.fill(0)
         }
+        return uploadMultipartJson(accessToken, metadata.toString(), content)
+    }
+
+    fun findBatchFile(accessToken: String, folderId: String, batchId: String): DesktopDriveFile? {
+        val name = "$BATCH_FILE_PREFIX$batchId$BATCH_FILE_SUFFIX"
+        val query = "'$folderId' in parents and name = '${escapeQueryLiteral(name)}' and trashed = false"
+        return listAllFiles(accessToken, query).firstOrNull { it.name == name }
+    }
+
+    fun listBatchFiles(accessToken: String, folderId: String): List<DesktopDriveFile> {
+        val query = "'$folderId' in parents and trashed = false"
+        return listAllFiles(accessToken, query)
+            .filter { it.name.startsWith(BATCH_FILE_PREFIX) && it.name.endsWith(BATCH_FILE_SUFFIX) }
+            .sortedBy { it.name }
     }
 
     fun findLatestRecoveryEnvelope(accessToken: String, folderId: String): DesktopDriveFile? {
@@ -116,6 +128,33 @@ internal class DesktopDriveVaultClient {
             method = "GET",
             url = "$DRIVE_API/files/${encode(fileId)}?alt=media"
         )
+    }
+
+    private fun uploadMultipartJson(accessToken: String, metadataJson: String, content: String): String {
+        val boundary = "friday_${UUID.randomUUID().toString().replace("-", "")}"
+        val multipart = buildString {
+            append("--$boundary\r\n")
+            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+            append(metadataJson)
+            append("\r\n--$boundary\r\n")
+            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
+            append(content)
+            append("\r\n--$boundary--\r\n")
+        }.toByteArray(StandardCharsets.UTF_8)
+        try {
+            val response = request(
+                accessToken = accessToken,
+                method = "POST",
+                url = "$UPLOAD_API/files?uploadType=multipart&fields=id,name",
+                contentType = "multipart/related; boundary=$boundary",
+                body = multipart
+            )
+            return json.parseToJsonElement(response).jsonObject["id"]
+                ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                ?: throw IOException("Google Drive upload returned no file ID.")
+        } finally {
+            multipart.fill(0)
+        }
     }
 
     private fun listAllFiles(accessToken: String, query: String): List<DesktopDriveFile> {
@@ -188,12 +227,15 @@ internal class DesktopDriveVaultClient {
         }
     }
 
+    private fun escapeQueryLiteral(value: String): String = value.replace("\\", "\\\\").replace("'", "\\'")
     private fun encode(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8)
 
     companion object {
         const val VAULT_FOLDER_NAME = "FRIDAY_Vault"
         const val RECOVERY_FILE_PREFIX = "friday_key_envelope_"
         const val RECOVERY_FILE_SUFFIX = ".json"
+        const val BATCH_FILE_PREFIX = "batch_"
+        const val BATCH_FILE_SUFFIX = ".friday"
         const val FOLDER_MIME = "application/vnd.google-apps.folder"
         const val DRIVE_API = "https://www.googleapis.com/drive/v3"
         const val UPLOAD_API = "https://www.googleapis.com/upload/drive/v3"

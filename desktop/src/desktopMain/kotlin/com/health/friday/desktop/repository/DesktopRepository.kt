@@ -1,8 +1,12 @@
 package com.health.friday.desktop.repository
 
 import com.health.friday.desktop.ai.DesktopAiClient
+import com.health.friday.desktop.bridge.DesktopIdentity
 import com.health.friday.desktop.bridge.DesktopKtorServer
 import com.health.friday.desktop.bridge.DesktopSyncClient
+import com.health.friday.desktop.sync.cloud.DesktopCloudSyncRemoteApplier
+import com.health.friday.desktop.sync.cloud.DesktopCloudSyncRuntime
+import com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult
 import com.health.friday.shared.ai.LocalOllamaClient
 import com.health.friday.shared.ai.SharedAiOrchestrator
 import com.health.friday.shared.models.*
@@ -83,6 +87,16 @@ class DesktopRepository(
     val nutritionRepo = NutritionRepository(this::readOnly)
     val healthRepo = HealthRepository(this::readOnly)
     val tasksRepo = TasksRepository(this::readOnly)
+
+    private val cloudRemoteApplier = DesktopCloudSyncRemoteApplier(
+        nutritionRepository = nutritionRepo,
+        healthRepository = healthRepo,
+        tasksRepository = tasksRepo
+    )
+    val cloudSyncRuntime = DesktopCloudSyncRuntime(
+        deviceId = DesktopIdentity.deviceId,
+        remoteApplier = cloudRemoteApplier
+    )
 
     private val defaultWelcomeMsg = ChatMessageDto(
         "1", ChatRole.ASSISTANT,
@@ -398,6 +412,18 @@ class DesktopRepository(
         personaStyle.value = newPersona
         localModelName.value = newModel
     }
+
+    fun connectGoogleDrive(credentialsFile: File): String =
+        cloudSyncRuntime.recoveryService.connect(credentialsFile)
+
+    fun backUpGoogleDriveRecoveryKey(passphrase: CharArray): String =
+        cloudSyncRuntime.recoveryService.backUpRecoveryKey(passphrase)
+
+    fun restoreGoogleDriveRecoveryKey(passphrase: CharArray): String =
+        cloudSyncRuntime.recoveryService.restoreRecoveryKey(passphrase)
+
+    fun syncGoogleDrive(): DesktopDriveSyncResult =
+        kotlinx.coroutines.runBlocking { cloudSyncRuntime.syncEngine.performSync() }
 
     fun disconnect() {
         syncClient.disconnect()

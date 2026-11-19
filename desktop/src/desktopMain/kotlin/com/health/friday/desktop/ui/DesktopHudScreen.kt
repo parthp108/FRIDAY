@@ -129,9 +129,18 @@ class DesktopHudScreen : Screen {
                                         onClearHistory = { screenModel.processIntent(HudIntent.ClearHistory) }
                                     )
                                     DesktopNavTab.DIAGNOSTICS -> DesktopDiagnosticsScreen(state.isPhoneConnected, state.activeModel, state.phoneName)
-                                    DesktopNavTab.SETTINGS -> DesktopSettingsScreen(state.apiKey, state.personaStyle, state.activeModel) { key, persona, model ->
-                                        screenModel.processIntent(HudIntent.UpdateSettings(key, persona, model))
-                                    }
+                                    DesktopNavTab.SETTINGS -> DesktopSettingsScreen(
+                                        apiKey = state.apiKey,
+                                        personaStyle = state.personaStyle,
+                                        selectedLocalModel = state.activeModel,
+                                        onUpdateSettings = { key, persona, model ->
+                                            screenModel.processIntent(HudIntent.UpdateSettings(key, persona, model))
+                                        },
+                                        onDriveConnect = { screenModel.connectGoogleDrive(it) },
+                                        onDriveBackup = { screenModel.backUpGoogleDriveRecoveryKey(it) },
+                                        onDriveRestore = { screenModel.restoreGoogleDriveRecoveryKey(it) },
+                                        onDriveSync = { screenModel.syncGoogleDrive() }
+                                    )
                                 }
                             }
                         }

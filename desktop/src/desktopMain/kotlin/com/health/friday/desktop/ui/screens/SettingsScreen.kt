@@ -12,7 +12,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.health.friday.desktop.sync.cloud.DesktopCloudSyncService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -23,7 +22,11 @@ fun DesktopSettingsScreen(
     apiKey: String,
     personaStyle: String,
     selectedLocalModel: String = "llama3.2:1b",
-    onUpdateSettings: (String, String, String) -> Unit
+    onUpdateSettings: (String, String, String) -> Unit,
+    onDriveConnect: (java.io.File) -> String = { error("Drive connection is not wired.") },
+    onDriveBackup: (CharArray) -> String = { error("Drive key backup is not wired.") },
+    onDriveRestore: (CharArray) -> String = { error("Drive key restore is not wired.") },
+    onDriveSync: () -> com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult = { error("Drive sync is not wired.") }
 ) {
     var keyInput by remember { mutableStateOf(apiKey) }
     var selectedPersona by remember { mutableStateOf(personaStyle) }
@@ -31,7 +34,6 @@ fun DesktopSettingsScreen(
     var localLlmEnabled by remember { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
-    val syncService = remember { DesktopCloudSyncService() }
     var syncRunning by remember { mutableStateOf(false) }
     var syncStatus by remember { mutableStateOf("Not connected") }
     var passphraseInput by remember { mutableStateOf("") }
@@ -79,7 +81,7 @@ fun DesktopSettingsScreen(
                                     scope.launch {
                                         val result = runCatching {
                                             withContext(Dispatchers.IO) {
-                                                syncService.connect(credentialsFile)
+                                                onDriveConnect(credentialsFile)
                                             }
                                         }
 
@@ -136,7 +138,7 @@ fun DesktopSettingsScreen(
                                 scope.launch {
                                     val result = runCatching {
                                         withContext(Dispatchers.IO) {
-                                            syncService.backUpRecoveryKey(phrase)
+                                            onDriveBackup(phrase)
                                         }
                                     }
 
@@ -164,7 +166,7 @@ fun DesktopSettingsScreen(
                                 scope.launch {
                                     val result = runCatching {
                                         withContext(Dispatchers.IO) {
-                                            syncService.restoreRecoveryKey(phrase)
+                                            onDriveRestore(phrase)
                                         }
                                     }
 
@@ -181,6 +183,33 @@ fun DesktopSettingsScreen(
                         ) {
                             Text("3. Restore Key on Windows")
                         }
+                    }
+
+                    Button(
+                        enabled = !syncRunning,
+                        onClick = {
+                            syncRunning = true
+                            syncStatus = "Synchronizing encrypted batches..."
+
+                            scope.launch {
+                                val result = runCatching {
+                                    withContext(Dispatchers.IO) {
+                                        onDriveSync()
+                                    }
+                                }
+
+                                syncStatus = result.fold(
+                                    onSuccess = { res ->
+                                        "SYNC COMPLETED\nUploaded batches: ${res.uploadedBatches}\nUploaded operations: ${res.uploadedOperations}\nDownloaded batches: ${res.downloadedBatches}\nApplied operations: ${res.appliedOperations}\nDuplicate/stale operations: ${res.duplicateOrStaleOperations}"
+                                    },
+                                    onFailure = { "SYNC FAILED: ${it.message ?: it}" }
+                                )
+                                syncRunning = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text(if (syncRunning) "Working..." else "Sync Now")
                     }
 
                     Text(

@@ -3,6 +3,8 @@ package com.health.friday.desktop.features.hud
 import cafe.adriel.voyager.core.model.StateScreenModel
 import cafe.adriel.voyager.core.model.screenModelScope
 import com.health.friday.desktop.repository.DesktopRepository
+import com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -93,6 +95,11 @@ class HudScreenModel(
             }
         }
     }
+
+    fun connectGoogleDrive(credentialsFile: File): String = repository.connectGoogleDrive(credentialsFile)
+    fun backUpGoogleDriveRecoveryKey(passphrase: CharArray): String = repository.backUpGoogleDriveRecoveryKey(passphrase)
+    fun restoreGoogleDriveRecoveryKey(passphrase: CharArray): String = repository.restoreGoogleDriveRecoveryKey(passphrase)
+    fun syncGoogleDrive(): DesktopDriveSyncResult = repository.syncGoogleDrive()
 
     fun processIntent(intent: HudIntent) {
         when (intent) {

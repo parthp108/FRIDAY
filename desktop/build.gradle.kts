@@ -35,6 +35,11 @@ kotlin {
                 implementation("net.java.dev.jna:jna-platform:5.14.0")
             }
         }
+        val desktopTest by getting {
+            dependencies {
+                implementation(kotlin("test"))
+            }
+        }
     }
 }
 
