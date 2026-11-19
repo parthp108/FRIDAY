@@ -23,9 +23,12 @@ class DesktopCloudSyncStoreTest {
         val operation = mealUpsert("desktop-node", HlcTimestamp(1_700_000_000_000, 0, "desktop-node").encode(), "op-1")
         store.enqueue(operation)
         assertEquals(listOf(operation), store.pendingOutbox(10))
+        assertEquals("meal-id-1", store.snapshotEntities().single().entityId)
+        assertEquals(false, store.snapshotEntities().single().isDeleted)
 
         val reopened = DesktopCloudSyncStore("desktop-node", fileStore = fileStore)
         assertEquals(listOf(operation), reopened.pendingOutbox(10))
+        assertEquals("meal-id-1", reopened.snapshotEntities().single().entityId)
         reopened.markUploaded(listOf("op-1"), "batch-1", 1_700_000_000_001)
         assertTrue(reopened.pendingOutbox(10).isEmpty())
     }

@@ -7,6 +7,15 @@ import com.health.friday.desktop.bridge.DesktopSyncClient
 import com.health.friday.desktop.sync.cloud.DesktopCloudSyncRemoteApplier
 import com.health.friday.desktop.sync.cloud.DesktopCloudSyncRuntime
 import com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult
+import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
+import com.health.friday.shared.sync.cloud.GoalSyncPayload
+import com.health.friday.shared.sync.cloud.MealSyncPayload
+import com.health.friday.shared.sync.cloud.TodoSyncPayload
+import com.health.friday.shared.sync.cloud.WaterSyncPayload
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import kotlinx.coroutines.SupervisorJob
 import com.health.friday.shared.ai.LocalOllamaClient
 import com.health.friday.shared.ai.SharedAiOrchestrator
 import com.health.friday.shared.models.*
@@ -72,7 +81,7 @@ class DesktopRepository(
         const val DEFAULT_WATER_GOAL_ML = 2500
     }
 
-    private val scope = CoroutineScope(Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val webSearchTool = WebSearchTool()
 
     /** One-line banner shown in the UI (read-only rejections etc.). */
@@ -400,13 +409,133 @@ class DesktopRepository(
         """.trimIndent()
     }
 
-    fun addTask(title: String) = tasksRepo.addTask(title)
-    fun toggleTask(task: FridayTaskDto) = tasksRepo.toggleTask(task)
-    fun logMeal(name: String, calories: Int, protein: Float, carbs: Float, fat: Float) =
-        nutritionRepo.logMeal(name, calories, protein, carbs, fat)
-    fun addWater(amountMl: Int) = healthRepo.addWater(amountMl)
-    fun addReminder() = readOnly("Adding a reminder")
+    /** Create a desktop-owned task and durably enqueue it for encrypted Drive sync. */
+    fun addTask(title: String) {
+        val cleanTitle = title.trim()
+        if (cleanTitle.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val id = Ids.randomHex(16)
+        val isGoal = cleanTitle.startsWith("[GOAL]", ignoreCase = true)
+        val recordTitle = if (isGoal) cleanTitle.removeRange(0, 6).trimStart(' ', ':', '-') else cleanTitle
+        if (recordTitle.isEmpty()) return
+        if (isGoal) {
+            val payload = cloudPayloadJson.encodeToJsonElement(
+                GoalSyncPayload.serializer(),
+                GoalSyncPayload(
+                    syncId = id,
+                    title = recordTitle,
+                    targetDate = null,
+                    isDone = false,
+                    createdAt = now
+                )
+            ).jsonObject
+            enqueueDesktopUpsert(CloudSyncEntityTypes.GOAL, id, payload, "Goal")
+        } else {
+            val payload = cloudPayloadJson.encodeToJsonElement(
+                TodoSyncPayload.serializer(),
+                TodoSyncPayload(
+                    syncId = id,
+                    title = recordTitle,
+                    isDone = false,
+                    createdAt = now,
+                    completedAt = null,
+                    dueAt = null
+                )
+            ).jsonObject
+            enqueueDesktopUpsert(CloudSyncEntityTypes.TODO, id, payload, "Task")
+        }
+    }
 
+    /** Toggle the same globally unique task ID; never create a replacement task. */
+    fun toggleTask(task: FridayTaskDto) {
+        if (task.id.isBlank()) return
+        val now = System.currentTimeMillis()
+        val nextDone = !task.isCompleted
+        val createdAt = task.createdTimestamp.takeIf { it > 0L }
+            ?: task.timestamp.takeIf { it > 0L }
+            ?: now
+        val payload = cloudPayloadJson.encodeToJsonElement(
+            TodoSyncPayload.serializer(),
+            TodoSyncPayload(
+                syncId = task.id,
+                title = task.title,
+                isDone = nextDone,
+                createdAt = createdAt,
+                completedAt = if (nextDone) now else null,
+                dueAt = task.deadlineTimestamp
+            )
+        ).jsonObject
+        enqueueDesktopUpsert(CloudSyncEntityTypes.TODO, task.id, payload, "Task update")
+    }
+
+    /** Desktop meal entries use the shared sync ID, not a local database row ID. */
+    fun logMeal(name: String, calories: Int, protein: Float, carbs: Float, fat: Float) {
+        val cleanName = name.trim()
+        if (cleanName.isEmpty() || calories <= 0) return
+        val now = System.currentTimeMillis()
+        val id = Ids.randomHex(16)
+        val payload = cloudPayloadJson.encodeToJsonElement(
+            MealSyncPayload.serializer(),
+            MealSyncPayload(
+                syncId = id,
+                name = cleanName,
+                mealType = "meal",
+                calories = calories,
+                protein = protein.toDouble().coerceAtLeast(0.0),
+                carbohydrates = carbs.toDouble().coerceAtLeast(0.0),
+                fat = fat.toDouble().coerceAtLeast(0.0),
+                timestamp = now,
+                isEstimated = false,
+                nutrientsJson = "{}"
+            )
+        ).jsonObject
+        enqueueDesktopUpsert(CloudSyncEntityTypes.MEAL, id, payload, "Meal")
+    }
+
+    /** Water logs are individual events, so retries cannot double-add an aggregate. */
+    fun addWater(amountMl: Int) {
+        if (amountMl <= 0) return
+        val now = System.currentTimeMillis()
+        val id = Ids.randomHex(16)
+        val payload = cloudPayloadJson.encodeToJsonElement(
+            WaterSyncPayload.serializer(),
+            WaterSyncPayload(syncId = id, amountMl = amountMl, timestamp = now)
+        ).jsonObject
+        enqueueDesktopUpsert(CloudSyncEntityTypes.WATER_ENTRY, id, payload, "Water entry")
+    }
+
+    fun deleteTask(taskId: String) = enqueueDesktopDelete(CloudSyncEntityTypes.TODO, taskId, "Task deletion")
+    fun deleteMeal(mealId: String) = enqueueDesktopDelete(CloudSyncEntityTypes.MEAL, mealId, "Meal deletion")
+    fun deleteWaterEntry(entryId: String) = enqueueDesktopDelete(CloudSyncEntityTypes.WATER_ENTRY, entryId, "Water deletion")
+    fun addReminder(title: String = "", timeMillis: Long = 0L) = readOnly("Adding a reminder")
+
+    private val cloudPayloadJson = Json { encodeDefaults = true }
+
+    private fun enqueueDesktopUpsert(
+        entityType: String,
+        entityId: String,
+        payload: JsonObject,
+        label: String
+    ) {
+        scope.launch {
+            runCatching {
+                cloudSyncRuntime.store.enqueueLocalUpsert(entityType, entityId, payload)
+            }.onFailure { error ->
+                notice.value = "$label could not be saved to FRIDAY's encrypted sync store: ${error.message ?: error.javaClass.simpleName}"
+            }
+        }
+    }
+
+    private fun enqueueDesktopDelete(entityType: String, entityId: String, label: String) {
+        if (entityId.isBlank()) return
+        scope.launch {
+            runCatching {
+                cloudSyncRuntime.store.enqueueLocalDelete(entityType, entityId)
+            }.onFailure { error ->
+                notice.value = "$label could not be saved to FRIDAY's encrypted sync store: ${error.message ?: error.javaClass.simpleName}"
+            }
+        }
+    }
     fun updateSettings(newKey: String, newPersona: String, newModel: String = "llama3.2:1b") {
         apiKey.value = newKey
         personaStyle.value = newPersona

@@ -251,7 +251,7 @@ class LocalSyncServer(
             .take(MAX_MEALS_SENT)
             .map { m ->
                 FridayMealDto(
-                    id = m.id.toString(),
+                    id = m.syncId,
                     name = m.name,
                     calories = m.calories,
                     protein = m.protein.toFloat(),
@@ -264,10 +264,13 @@ class LocalSyncServer(
 
         val tasks = (db.todoDao().getAll().firstOrNull() ?: emptyList()).map { t ->
             FridayTaskDto(
-                id = t.id.toString(),
+                id = t.syncId,
                 title = t.title,
                 isCompleted = t.isDone,
                 category = "general",
+                createdTimestamp = t.createdAt,
+                completedTimestamp = t.completedAt,
+                deadlineTimestamp = t.dueAt,
                 timestamp = t.createdAt
             )
         }

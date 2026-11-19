@@ -90,21 +90,66 @@ class DesktopCloudSyncStore internal constructor(
 
     override suspend fun enqueue(operation: SyncOperation) {
         operation.validate()
-        synchronized(lock) {
+        require(operation.originDeviceId == deviceId) {
+            "Desktop outbox accepts only operations created by this installation."
+        }
+
+        val incomingClock = HlcTimestamp.parse(operation.hlc)
+            ?: throw IllegalArgumentException("Malformed local operation HLC: ${operation.hlc}")
+
+        val committedSnapshot = synchronized(lock) {
             val current = readState()
-            val existing = current.outbox.firstOrNull {
+            val existingOutbox = current.outbox.firstOrNull {
                 it.operation.operationId == operation.operationId
             }
-            if (existing != null) {
-                require(existing.operation == operation) {
+            if (existingOutbox != null) {
+                require(existingOutbox.operation == operation) {
                     "Operation ID collision: ${operation.operationId} refers to different content."
                 }
-                return
             }
-            writeState(current.copy(outbox = current.outbox + DesktopOutboxRow(operation)))
-        }
-    }
 
+            val incomingRecord = DesktopCloudSyncRemoteApplier.recordFrom(operation)
+            val key = entityKey(operation.entityType, operation.entityId)
+            val previous = current.entities.firstOrNull {
+                it.entityType == operation.entityType && it.entityId == operation.entityId
+            }
+            val previousClock = previous?.let {
+                HlcTimestamp.parse(it.hlc)
+                    ?: throw IllegalStateException("Malformed stored HLC for ${it.entityType}/${it.entityId}.")
+            }
+            val shouldUpdateEntity = previousClock == null || incomingClock > previousClock
+
+            // New local mutations must be newer than the committed entity version.
+            // An already-enqueued retry may be older because a later edit has since won.
+            require(shouldUpdateEntity || existingOutbox != null) {
+                "Refusing stale local operation ${operation.operationId} for ${operation.entityType}/${operation.entityId}."
+            }
+
+            val mergedClockState = mergeClock(current, incomingClock)
+            val nextOutbox = if (existingOutbox == null) {
+                current.outbox + DesktopOutboxRow(operation)
+            } else {
+                current.outbox
+            }
+            val nextEntities = if (shouldUpdateEntity) {
+                (current.entities.filterNot { entityKey(it.entityType, it.entityId) == key } + incomingRecord)
+                    .sortedWith(compareBy<DesktopCloudSyncEntityRecord> { it.entityType }.thenBy { it.entityId })
+            } else {
+                current.entities
+            }
+
+            val updated = mergedClockState.copy(
+                outbox = nextOutbox,
+                entities = nextEntities
+            )
+            if (updated != current) writeState(updated)
+            updated.entities
+        }
+
+        // Persist the local mutation and its entity projection before publishing it.
+        // This keeps newly created/edited records visible after an offline restart.
+        remoteApplier?.publishSnapshot(committedSnapshot)
+    }
     override suspend fun pendingOutbox(limit: Int): List<SyncOperation> {
         require(limit > 0) { "limit must be greater than zero." }
         return synchronized(lock) {
