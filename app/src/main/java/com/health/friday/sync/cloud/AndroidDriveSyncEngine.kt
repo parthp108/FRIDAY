@@ -1,5 +1,6 @@
 package com.health.friday.sync.cloud
 
+import com.health.friday.shared.sync.cloud.CloudSyncKeyEnvelope
 import com.health.friday.shared.sync.cloud.CloudSyncStore
 import com.health.friday.shared.sync.cloud.EncryptedSyncPayload
 import com.health.friday.shared.sync.cloud.SyncBatch
@@ -8,38 +9,76 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.net.HttpURLConnection
-import java.net.URL
 
 data class DriveSyncResult(
+    val backfilledRecords: Int,
     val uploadedBatches: Int,
     val uploadedOperations: Int,
     val downloadedBatches: Int,
     val appliedOperations: Int
 )
 
+/**
+ * Manual, foreground Drive sync. Background scheduling is intentionally not
+ * enabled until the recovery and two-device round-trip have been verified.
+ */
 class AndroidDriveSyncEngine(
     private val cloudSyncStore: CloudSyncStore,
     private val security: AndroidCloudSyncSecurity,
-    private val deviceId: String
+    private val deviceId: String,
+    private val backfill: CloudSyncBackfill,
+    private val drive: DriveVaultClient = DriveVaultClient()
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
+    suspend fun backUpRecoveryKey(
+        accessToken: String,
+        passphrase: CharArray
+    ): CloudSyncKeyEnvelope = withContext(Dispatchers.IO) {
+        require(accessToken.isNotBlank())
+        val envelope = security.createRecoveryEnvelope(passphrase)
+        val folderId = drive.ensureVaultFolder(accessToken)
+        val fileName = "${DriveVaultClient.RECOVERY_FILE_PREFIX}${envelope.createdAtMs}${DriveVaultClient.RECOVERY_FILE_SUFFIX}"
+        val content = json.encodeToString(CloudSyncKeyEnvelope.serializer(), envelope)
+        drive.uploadTextFile(
+            accessToken = accessToken,
+            folderId = folderId,
+            fileName = fileName,
+            content = content,
+            appProperties = mapOf("fridayKind" to "key-envelope", "keyId" to envelope.keyId)
+        )
+        envelope
+    }
+
+    suspend fun restoreRecoveryKey(
+        accessToken: String,
+        passphrase: CharArray
+    ): CloudSyncKeyEnvelope = withContext(Dispatchers.IO) {
+        require(accessToken.isNotBlank())
+        val folderId = drive.ensureVaultFolder(accessToken)
+        val file = drive.findLatestRecoveryEnvelope(accessToken, folderId)
+            ?: error("No FRIDAY recovery-key envelope was found in this Google Drive vault")
+        val content = drive.downloadTextFile(accessToken, file.id)
+        val envelope = json.decodeFromString(CloudSyncKeyEnvelope.serializer(), content)
+        envelope.validate()
+        security.restoreFromEnvelope(envelope, passphrase)
+        envelope
+    }
+
     suspend fun performSync(accessToken: String): DriveSyncResult = withContext(Dispatchers.IO) {
         require(accessToken.isNotBlank()) { "accessToken must not be blank" }
-
-        val folderId = getOrCreateBackupFolder(accessToken)
-
-        // 1. Upload local outbox operations as encrypted batches
+        check(security.hasLocalMasterKey()) {
+            "FRIDAY cloud key is not initialized. Back up or restore the recovery key first."
+        }
+        val folderId = drive.ensureVaultFolder(accessToken)
+        val backfillReport = backfill.run()
         val uploadResult = uploadPendingOutbox(accessToken, folderId)
-
-        // 2. Download remote encrypted batches and apply them locally
         val downloadResult = downloadRemoteBatches(accessToken, folderId)
-
         DriveSyncResult(
+            backfilledRecords = backfillReport.totalRecords,
             uploadedBatches = uploadResult.first,
             uploadedOperations = uploadResult.second,
             downloadedBatches = downloadResult.first,
@@ -51,33 +90,64 @@ class AndroidDriveSyncEngine(
         accessToken: String,
         folderId: String
     ): Pair<Int, Int> {
-        val pendingOps = cloudSyncStore.pendingOutbox(limit = 200)
-        if (pendingOps.isEmpty()) return 0 to 0
+        var batchCount = 0
+        var operationCount = 0
 
-        val nowMs = System.currentTimeMillis()
-        val batch = SyncBatch.create(
-            deviceId = deviceId,
-            createdAtMs = nowMs,
-            operations = pendingOps
-        )
+        repeat(MAX_BATCHES_PER_SYNC) {
+            val pending = cloudSyncStore.pendingOutbox(limit = MAX_OPERATIONS_PER_BATCH)
+            if (pending.isEmpty()) return batchCount to operationCount
 
-        val encryptedPayload = security.encryptBatch(batch)
-        val payloadJson = json.encodeToString(EncryptedSyncPayload.serializer(), encryptedPayload)
+            val nowMs = System.currentTimeMillis()
+            val batchId = StableCloudBatchId.from(deviceId, pending)
+            val batch = SyncBatch(
+                batchId = batchId,
+                originDeviceId = deviceId,
+                createdAtMs = nowMs,
+                operations = pending
+            ).also { it.validate() }
 
-        val fileName = "batch_${nowMs}_$deviceId.friday"
-        val fileId = uploadFileToDrive(accessToken, folderId, fileName, payloadJson)
+            val encrypted = security.encryptBatch(batch)
+            val payload = json.encodeToString(EncryptedSyncPayload.serializer(), encrypted)
+            val fileName = "${DriveVaultClient.BATCH_FILE_PREFIX}${batch.batchId}${DriveVaultClient.BATCH_FILE_SUFFIX}"
 
-        check(!fileId.isNullOrBlank()) {
-            "Google Drive returned an empty file ID during upload"
+            // If the process died after a successful upload but before markUploaded,
+            // this finds the deterministic name and avoids creating a second copy.
+            val existingFile = drive.findTextFile(accessToken, folderId, fileName)
+            if (existingFile == null) {
+                drive.uploadTextFile(
+                    accessToken = accessToken,
+                    folderId = folderId,
+                    fileName = fileName,
+                    content = payload,
+                    appProperties = mapOf("fridayKind" to "sync-batch", "batchId" to batch.batchId)
+                )
+            } else {
+                // Verify the previous upload before marking this outbox set complete.
+                val previousJson = drive.downloadTextFile(accessToken, existingFile.id)
+                val previousEncrypted = json.decodeFromString(
+                    EncryptedSyncPayload.serializer(),
+                    previousJson
+                )
+                val previousBatch = security.decryptBatch(previousEncrypted)
+                check(previousBatch.batchId == batch.batchId) {
+                    "Existing Drive batch filename contains a different batch ID"
+                }
+                check(previousBatch.operations.map { it.operationId }.toSet() ==
+                    batch.operations.map { it.operationId }.toSet()) {
+                    "Existing Drive batch does not contain the expected outbox operations"
+                }
+            }
+
+            cloudSyncStore.markUploaded(
+                operationIds = pending.map { it.operationId },
+                batchId = batch.batchId,
+                uploadedAtMs = nowMs
+            )
+            batchCount++
+            operationCount += pending.size
         }
 
-        cloudSyncStore.markUploaded(
-            operationIds = pendingOps.map { it.operationId },
-            batchId = batch.batchId,
-            uploadedAtMs = nowMs
-        )
-
-        return 1 to pendingOps.size
+        return batchCount to operationCount
     }
 
     private suspend fun downloadRemoteBatches(
@@ -85,167 +155,30 @@ class AndroidDriveSyncEngine(
         folderId: String
     ): Pair<Int, Int> {
         val currentCursor = cloudSyncStore.readCursor()
-        val files = listBackupFiles(accessToken, folderId)
-
-        var downloadedBatches = 0
-        var appliedOps = 0
+        val files = drive.listBatchFiles(accessToken, folderId)
+        var downloaded = 0
+        var applied = 0
 
         for (file in files) {
-            val fileId = file.id
-            val fileName = file.name
-            if (fileId.isBlank() || !fileName.endsWith(".friday")) continue
-
-            val jsonContent = downloadFileFromDrive(accessToken, fileId) ?: continue
-            val payload = try {
-                json.decodeFromString(EncryptedSyncPayload.serializer(), jsonContent)
-            } catch (_: Exception) {
-                continue
-            }
-
-            val batch = try {
-                security.decryptBatch(payload)
-            } catch (_: Exception) {
-                continue
-            }
-
-            val updatedCursor = SyncCursor(
+            // Do not silently skip corrupt or undecryptable FRIDAY batch files.
+            // A failed batch is surfaced to the user and does not advance the
+            // Room inbox/cursor transaction for that batch.
+            val content = drive.downloadTextFile(accessToken, file.id)
+            val encrypted = json.decodeFromString(EncryptedSyncPayload.serializer(), content)
+            val batch = security.decryptBatch(encrypted)
+            val nextCursor = SyncCursor(
                 drivePageToken = currentCursor.drivePageToken,
                 lastSuccessfulSyncAtMs = System.currentTimeMillis()
             )
-
-            val remoteResult = cloudSyncStore.ingestRemoteBatch(batch, updatedCursor)
-
-            downloadedBatches++
-            appliedOps += remoteResult.appliedOperations
+            val result = cloudSyncStore.ingestRemoteBatch(batch, nextCursor)
+            downloaded++
+            applied += result.appliedOperations
         }
-
-        return downloadedBatches to appliedOps
+        return downloaded to applied
     }
 
-    private fun getOrCreateBackupFolder(accessToken: String): String {
-        val query = "name = 'FRIDAY_Vault' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
-        val searchUrl = "https://www.googleapis.com/drive/v3/files?q=${URLParamEncoder.encode(query)}"
-
-        val conn = (URL(searchUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-        }
-
-        val code = conn.responseCode
-        if (code == 200) {
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            val existingId = parseFirstFileId(body)
-            if (!existingId.isNullOrBlank()) return existingId
-        }
-
-        // Create folder
-        val createUrl = "https://www.googleapis.com/drive/v3/files"
-        val body = """{"name":"FRIDAY_Vault","mimeType":"application/vnd.google-apps.folder"}"""
-
-        val createConn = (URL(createUrl).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-            doOutput = true
-            outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        }
-
-        val createCode = createConn.responseCode
-        check(createCode in 200..299) {
-            "Failed to create FRIDAY_Vault folder on Google Drive (HTTP $createCode)"
-        }
-
-        val responseText = createConn.inputStream.bufferedReader().use { it.readText() }
-        val folderId = parseFirstFileId(responseText)
-        check(!folderId.isNullOrBlank()) { "Google Drive returned an empty folder ID" }
-        return folderId
-    }
-
-    private fun uploadFileToDrive(
-        accessToken: String,
-        folderId: String,
-        fileName: String,
-        content: String
-    ): String? {
-        val url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
-        val boundary = "======FRIDAY_SYNC_BOUNDARY======"
-
-        val metadataJson = """{"name":"$fileName","parents":["$folderId"]}"""
-
-        val body = StringBuilder().apply {
-            append("--$boundary\r\n")
-            append("Content-Type: application/json; charset=UTF-8\r\n\r\n")
-            append(metadataJson)
-            append("\r\n--$boundary\r\n")
-            append("Content-Type: application/octet-stream\r\n\r\n")
-            append(content)
-            append("\r\n--$boundary--\r\n")
-        }.toString()
-
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-            setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
-            doOutput = true
-            outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        }
-
-        val code = conn.responseCode
-        if (code in 200..299) {
-            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-            return parseFirstFileId(responseText)
-        }
-        return null
-    }
-
-    private fun downloadFileFromDrive(accessToken: String, fileId: String): String? {
-        val url = "https://www.googleapis.com/drive/v3/files/$fileId?alt=media"
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-        }
-
-        if (conn.responseCode == 200) {
-            return conn.inputStream.bufferedReader().use { it.readText() }
-        }
-        return null
-    }
-
-    private data class DriveFileItem(val id: String, val name: String)
-
-    private fun listBackupFiles(accessToken: String, folderId: String): List<DriveFileItem> {
-        val query = "'$folderId' in parents and trashed = false"
-        val url = "https://www.googleapis.com/drive/v3/files?q=${URLParamEncoder.encode(query)}&fields=files(id,name)"
-
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Authorization", "Bearer $accessToken")
-        }
-
-        if (conn.responseCode == 200) {
-            val body = conn.inputStream.bufferedReader().use { it.readText() }
-            return parseFileList(body)
-        }
-        return emptyList()
-    }
-
-    private fun parseFirstFileId(jsonText: String): String? {
-        val idRegex = """"id"\s*:\s*"([^"]+)"""".toRegex()
-        return idRegex.find(jsonText)?.groupValues?.get(1)
-    }
-
-    private fun parseFileList(jsonText: String): List<DriveFileItem> {
-        val itemRegex = """"id"\s*:\s*"([^"]+)"\s*,\s*"name"\s*:\s*"([^"]+)"""".toRegex()
-        val results = mutableListOf<DriveFileItem>()
-        itemRegex.findAll(jsonText).forEach { match ->
-            val id = match.groupValues[1]
-            val name = match.groupValues[2]
-            results.add(DriveFileItem(id, name))
-        }
-        return results
-    }
-
-    private object URLParamEncoder {
-        fun encode(input: String): String = java.net.URLEncoder.encode(input, "UTF-8")
+    companion object {
+        private const val MAX_OPERATIONS_PER_BATCH = 200
+        private const val MAX_BATCHES_PER_SYNC = 50
     }
 }

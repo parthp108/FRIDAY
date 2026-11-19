@@ -17,6 +17,7 @@ class FakeJournalDao : JournalDao {
     val entries = mutableListOf<JournalEntry>()
     private var idCounter = 1L
 
+    override suspend fun getUnsyncedSyncIds(): List<String> = entries.filter { it.syncHlc == null }.map { it.syncId }
     override suspend fun getBySyncId(syncId: String): JournalEntry? = entries.find { it.syncId == syncId }
 
     override suspend fun deleteBySyncId(syncId: String): Int {

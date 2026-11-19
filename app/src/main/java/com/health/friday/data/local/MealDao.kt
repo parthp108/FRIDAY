@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MealDao {
 
+    @Query("SELECT syncId FROM meals WHERE syncHlc IS NULL ORDER BY timestamp ASC")
+    suspend fun getUnsyncedSyncIds(): List<String>
+
     @Query("SELECT * FROM meals WHERE syncId = :syncId LIMIT 1")
     suspend fun getBySyncId(syncId: String): Meal?
 

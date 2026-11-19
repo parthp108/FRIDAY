@@ -19,6 +19,8 @@ data class CloudSyncBatchMutation(
     val entityType: String,
     val entityId: String,
     val operationType: SyncOperationType = SyncOperationType.UPSERT,
+    /** Evaluated inside the same Room transaction, before stamping or enqueueing. */
+    val shouldWrite: suspend () -> Boolean = { true },
     val mutation: suspend (hlc: String) -> JsonObject?
 )
 
@@ -48,9 +50,7 @@ class AndroidCloudSyncWriter(
         return database.withTransaction {
             val timestamp = clock.nextInTransaction()
             val encodedHlc = timestamp.encode()
-
             val result = mutation(encodedHlc)
-
             val operation = SyncOperation.newUpsert(
                 deviceId = deviceId,
                 entityType = entityType,
@@ -59,7 +59,6 @@ class AndroidCloudSyncWriter(
                 createdAtMs = timestamp.wallMs,
                 payload = result.payload
             )
-
             insertOperation(operation)
             result.value
         }
@@ -67,7 +66,8 @@ class AndroidCloudSyncWriter(
 
     /**
      * Batch upsert or delete inside a single Room transaction.
-     * Executes all mutations and outbox writes, then calls afterBatch.
+     * The optional predicate lets initial backfill skip rows that were already
+     * stamped by a concurrent/newer writer before this transaction began.
      */
     suspend fun upsertBatch(
         mutations: List<CloudSyncBatchMutation>,
@@ -77,11 +77,11 @@ class AndroidCloudSyncWriter(
             mutations.forEach { item ->
                 require(item.entityType.isNotBlank())
                 require(item.entityId.isNotBlank())
+                if (!item.shouldWrite()) return@forEach
 
                 val timestamp = clock.nextInTransaction()
                 val encodedHlc = timestamp.encode()
                 val payload = item.mutation(encodedHlc)
-
                 val operation = when (item.operationType) {
                     SyncOperationType.UPSERT -> SyncOperation.newUpsert(
                         deviceId = deviceId,
@@ -89,16 +89,10 @@ class AndroidCloudSyncWriter(
                         entityId = item.entityId,
                         hlc = encodedHlc,
                         createdAtMs = timestamp.wallMs,
-                        payload = requireNotNull(payload) {
-                            "UPSERT requires a payload"
-                        }
+                        payload = requireNotNull(payload) { "UPSERT requires a payload" }
                     )
-
                     SyncOperationType.DELETE -> {
-                        require(payload == null) {
-                            "DELETE must not contain a payload"
-                        }
-
+                        require(payload == null) { "DELETE must not contain a payload" }
                         SyncOperation.newDelete(
                             deviceId = deviceId,
                             entityType = item.entityType,
@@ -108,11 +102,8 @@ class AndroidCloudSyncWriter(
                         )
                     }
                 }
-
                 insertOperation(operation)
             }
-
-            // Save the page/checkpoint in the same transaction.
             afterBatch()
         }
     }
@@ -131,9 +122,7 @@ class AndroidCloudSyncWriter(
 
         return database.withTransaction {
             val timestamp = clock.nextInTransaction()
-
             val result = deleteLocal()
-
             val operation = SyncOperation.newDelete(
                 deviceId = deviceId,
                 entityType = entityType,
@@ -141,17 +130,13 @@ class AndroidCloudSyncWriter(
                 hlc = timestamp.encode(),
                 createdAtMs = timestamp.wallMs
             )
-
             insertOperation(operation)
             result
         }
     }
 
-    private suspend fun insertOperation(
-        operation: SyncOperation
-    ) {
+    private suspend fun insertOperation(operation: SyncOperation) {
         operation.validate()
-
         val inserted = dao.insertOutbox(
             CloudSyncOutboxEntity(
                 operationId = operation.operationId,
@@ -167,7 +152,6 @@ class AndroidCloudSyncWriter(
                 }
             )
         )
-
         check(inserted != -1L) {
             "Cloud sync operation ID collision: ${operation.operationId}"
         }

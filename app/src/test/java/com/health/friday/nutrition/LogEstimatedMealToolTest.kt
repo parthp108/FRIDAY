@@ -22,6 +22,7 @@ class FakeMealDao : MealDao {
     private var idCounter = 1L
 
     override suspend fun getBySyncId(syncId: String): Meal? = meals.find { it.syncId == syncId }
+    override suspend fun getUnsyncedSyncIds(): List<String> = meals.filter { it.syncHlc == null }.map { it.syncId }
 
     override suspend fun deleteBySyncId(syncId: String): Int {
         val count = meals.count { it.syncId == syncId }
@@ -44,21 +45,13 @@ class FakeMealDao : MealDao {
         meals.removeAll { it.id == meal.id }
     }
 
-    override fun getMealsForDay(startOfDay: Long, endOfDay: Long): Flow<List<Meal>> {
-        return flowOf(meals.filter { it.timestamp in startOfDay until endOfDay })
-    }
+    override fun getMealsForDay(startOfDay: Long, endOfDay: Long): Flow<List<Meal>> =
+        flowOf(meals.filter { it.timestamp in startOfDay until endOfDay })
 
-    override suspend fun getMealsByIds(ids: List<Long>): List<Meal> {
-        return meals.filter { it.id in ids }
-    }
-
-    override fun getAllMeals(): Flow<List<Meal>> {
-        return flowOf(meals)
-    }
-
-    override suspend fun getMealsBetween(start: Long, end: Long): List<Meal> {
-        return meals.filter { it.timestamp in start until end }
-    }
+    override suspend fun getMealsByIds(ids: List<Long>): List<Meal> = meals.filter { it.id in ids }
+    override fun getAllMeals(): Flow<List<Meal>> = flowOf(meals)
+    override suspend fun getMealsBetween(start: Long, end: Long): List<Meal> =
+        meals.filter { it.timestamp in start until end }
 }
 
 class FakeActionLogDao : ActionLogDao {
@@ -72,7 +65,6 @@ class FakeActionLogDao : ActionLogDao {
 }
 
 class LogEstimatedMealToolTest {
-
     private val fakeMealDao = FakeMealDao()
     private val fakeCalibrationDao = object : FoodCalibrationDao {
         override suspend fun getCalibration(name: String): FoodCalibrationEntity? = null
@@ -80,11 +72,9 @@ class LogEstimatedMealToolTest {
         override suspend fun deleteCalibration(name: String) {}
     }
     private val calibrationEngine = FoodCalibrationEngine(fakeCalibrationDao)
-
     private val fakeContext = object : ContextWrapper(null) {
         override fun getApplicationContext(): Context = this
     }
-
     private val repository = NutritionRepository(
         mealDao = fakeMealDao,
         nutritionProvider = object : NutritionProvider {
@@ -93,7 +83,6 @@ class LogEstimatedMealToolTest {
         healthConnectRepository = HealthConnectRepository(fakeContext),
         calibrationEngine = calibrationEngine
     )
-
     private val tool = LogEstimatedMealTool(
         repository = repository,
         actionRecorder = ActionRecorder(FakeActionLogDao())
@@ -108,10 +97,7 @@ class LogEstimatedMealToolTest {
             "carbs_g" to "70",
             "fat_g" to "75"
         )
-
         val result = tool.execute(args)
-
-        // Must state ESTIMATE, not measured
         assertTrue(result.contains("ESTIMATE, not measured"))
         assertTrue(result.contains("Triple-decker McDouble bypass burger"))
         assertTrue(result.contains("1200 kcal"))
@@ -119,7 +105,6 @@ class LogEstimatedMealToolTest {
 
     @Test
     fun testLogEstimatedMealMacroInconsistencyRejection() = runBlocking {
-        // Macros: 4*10 + 4*10 + 9*10 = 170 kcal, but calories claimed is 1000 kcal!
         val args = mapOf(
             "name" to "Inconsistent Burger",
             "calories" to "1000",
@@ -127,10 +112,7 @@ class LogEstimatedMealToolTest {
             "carbs_g" to "10",
             "fat_g" to "10"
         )
-
         val result = tool.execute(args)
-
-        // Should refuse to log inconsistent macros
         assertTrue(result.contains("Nothing logged") || result.contains("adds up to"))
     }
 }

@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TodoDao {
 
+    @Query("SELECT syncId FROM todo_items WHERE syncHlc IS NULL ORDER BY createdAt ASC")
+    suspend fun getUnsyncedSyncIds(): List<String>
+
     @Query("SELECT * FROM todo_items WHERE syncId = :syncId LIMIT 1")
     suspend fun getBySyncId(syncId: String): TodoItem?
 
@@ -35,6 +38,9 @@ interface TodoDao {
 @Dao
 interface GoalDao {
 
+    @Query("SELECT syncId FROM goals WHERE syncHlc IS NULL ORDER BY createdAt ASC")
+    suspend fun getUnsyncedSyncIds(): List<String>
+
     @Query("SELECT * FROM goals WHERE syncId = :syncId LIMIT 1")
     suspend fun getBySyncId(syncId: String): Goal?
 
@@ -56,6 +62,9 @@ interface GoalDao {
 
 @Dao
 interface JournalDao {
+
+    @Query("SELECT syncId FROM journal_entries WHERE syncHlc IS NULL ORDER BY createdAt ASC")
+    suspend fun getUnsyncedSyncIds(): List<String>
 
     @Query("SELECT * FROM journal_entries WHERE syncId = :syncId LIMIT 1")
     suspend fun getBySyncId(syncId: String): JournalEntry?

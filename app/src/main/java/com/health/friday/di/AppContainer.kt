@@ -67,7 +67,12 @@ import com.health.friday.voice.pipeline.StreamingAsrEngine
 import com.health.friday.voice.pipeline.WakewordEngine
 import com.health.friday.bridge.DeviceIdentity
 import com.health.friday.device.HealthConnectArchiveSyncer
+import com.health.friday.sync.cloud.AndroidCloudSyncSecurity
+import com.health.friday.sync.cloud.AndroidCloudSyncStore
 import com.health.friday.sync.cloud.AndroidCloudSyncWriter
+import com.health.friday.sync.cloud.AndroidDriveSyncEngine
+import com.health.friday.sync.cloud.CloudSyncBackfill
+import com.health.friday.sync.cloud.RoomCloudSyncRemoteApplier
 import com.health.friday.sync.cloud.AndroidHybridLogicalClock
 import com.health.friday.spotify.SpotifyAuth
 
@@ -88,6 +93,37 @@ class AppContainer(private val context: Context) {
             dao = database.cloudSyncDao(),
             clock = cloudSyncClock,
             deviceId = deviceIdentity.deviceId
+        )
+    }
+    val cloudSyncRemoteApplier by lazy {
+        RoomCloudSyncRemoteApplier(
+            database = database,
+            clock = cloudSyncClock
+        )
+    }
+
+    val cloudSyncStore by lazy {
+        AndroidCloudSyncStore(
+            database = database,
+            dao = database.cloudSyncDao(),
+            remoteApplier = cloudSyncRemoteApplier
+        )
+    }
+
+    val cloudSyncSecurity by lazy {
+        AndroidCloudSyncSecurity(context)
+    }
+
+    val cloudSyncBackfill by lazy {
+        CloudSyncBackfill(database, cloudSyncWriter)
+    }
+
+    val driveSyncEngine by lazy {
+        AndroidDriveSyncEngine(
+            cloudSyncStore = cloudSyncStore,
+            security = cloudSyncSecurity,
+            deviceId = deviceIdentity.deviceId,
+            backfill = cloudSyncBackfill
         )
     }
     val healthConnectArchiveSyncer by lazy {

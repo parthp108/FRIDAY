@@ -13,6 +13,9 @@ interface HealthConnectArchiveDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertRecord(record: HealthRecordArchiveEntity)
 
+    @Query("SELECT archiveId FROM health_record_archive WHERE syncHlc IS NULL AND isDeleted = 0 ORDER BY startTimeMs ASC")
+    suspend fun getUnsyncedArchiveIds(): List<String>
+
     @Query(
         """
         SELECT * FROM health_record_archive

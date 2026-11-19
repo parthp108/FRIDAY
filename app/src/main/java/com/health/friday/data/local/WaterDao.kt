@@ -10,6 +10,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface WaterDao {
 
+    @Query("SELECT syncId FROM water_entries WHERE syncHlc IS NULL ORDER BY timestamp ASC")
+    suspend fun getUnsyncedSyncIds(): List<String>
+
     @Query("SELECT * FROM water_entries WHERE syncId = :syncId LIMIT 1")
     suspend fun getBySyncId(syncId: String): WaterEntry?
 

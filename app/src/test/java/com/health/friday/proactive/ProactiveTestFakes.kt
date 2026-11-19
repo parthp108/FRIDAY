@@ -21,21 +21,16 @@ class FakeProactiveDao : ProactiveDao {
         if (index >= 0) nudges[index] = nudge
     }
 
-    override suspend fun getNudgeById(id: Long): NudgeHistoryEntity? {
-        return nudges.find { it.id == id }
-    }
+    override suspend fun getNudgeById(id: Long): NudgeHistoryEntity? = nudges.find { it.id == id }
 
-    override suspend fun getNudgesSince(since: Long): List<NudgeHistoryEntity> {
-        return nudges.filter { it.timestamp >= since }
-    }
+    override suspend fun getNudgesSince(since: Long): List<NudgeHistoryEntity> =
+        nudges.filter { it.timestamp >= since }
 
-    override suspend fun getLastNudgeOfType(type: String): NudgeHistoryEntity? {
-        return nudges.filter { it.type == type }.maxByOrNull { it.timestamp }
-    }
+    override suspend fun getLastNudgeOfType(type: String): NudgeHistoryEntity? =
+        nudges.filter { it.type == type }.maxByOrNull { it.timestamp }
 
-    override suspend fun getRecentNudgesOfType(type: String, limit: Int): List<NudgeHistoryEntity> {
-        return nudges.filter { it.type == type }.sortedByDescending { it.timestamp }.take(limit)
-    }
+    override suspend fun getRecentNudgesOfType(type: String, limit: Int): List<NudgeHistoryEntity> =
+        nudges.filter { it.type == type }.sortedByDescending { it.timestamp }.take(limit)
 
     override suspend fun insertProtocol(protocol: ProtocolEntity): Long {
         val inserted = protocol.copy(id = if (protocol.id == 0L) (protocols.size + 1).toLong() else protocol.id)
@@ -60,25 +55,21 @@ class FakeDailySignalsDao : DailySignalsDao {
         signalsMap[signal.date] = signal
     }
 
-    override suspend fun getSignalForDate(date: String): DailySignalsEntity? {
-        return signalsMap[date]
-    }
+    override suspend fun getSignalForDate(date: String): DailySignalsEntity? = signalsMap[date]
 
-    override fun observeSignalForDate(date: String): Flow<DailySignalsEntity?> {
-        return flowOf(signalsMap[date])
-    }
+    override suspend fun getUnsyncedDates(): List<String> =
+        signalsMap.values.filter { it.syncHlc == null }.map { it.date }.sorted()
 
-    override suspend fun getRecentSignals(limit: Int): List<DailySignalsEntity> {
-        return signalsMap.values.sortedByDescending { it.date }.take(limit)
-    }
+    override fun observeSignalForDate(date: String): Flow<DailySignalsEntity?> = flowOf(signalsMap[date])
 
-    override fun getRecentSignalsFlow(): Flow<List<DailySignalsEntity>> {
-        return flowOf(signalsMap.values.sortedByDescending { it.date }.take(14))
-    }
+    override suspend fun getRecentSignals(limit: Int): List<DailySignalsEntity> =
+        signalsMap.values.sortedByDescending { it.date }.take(limit)
 
-    override suspend fun getSignalsInRange(startDate: String, endDate: String): List<DailySignalsEntity> {
-        return signalsMap.values.filter { it.date in startDate..endDate }.sortedBy { it.date }
-    }
+    override fun getRecentSignalsFlow(): Flow<List<DailySignalsEntity>> =
+        flowOf(signalsMap.values.sortedByDescending { it.date }.take(14))
+
+    override suspend fun getSignalsInRange(startDate: String, endDate: String): List<DailySignalsEntity> =
+        signalsMap.values.filter { it.date in startDate..endDate }.sortedBy { it.date }
 
     override suspend fun updateMood(date: String, score: Int): Int {
         val existing = signalsMap[date] ?: return 0

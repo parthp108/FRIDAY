@@ -50,7 +50,11 @@ class AndroidCloudSyncSecurity internal constructor(
         encodeDefaults = true
     }
 
-    fun hasLocalMasterKey(): Boolean = vault.readMasterKey() != null
+    fun hasLocalMasterKey(): Boolean {
+        val stored = vault.readMasterKey() ?: return false
+        stored.bytes.fill(0)
+        return true
+    }
 
     /**
      * Creates a portable recovery envelope for the current master key.

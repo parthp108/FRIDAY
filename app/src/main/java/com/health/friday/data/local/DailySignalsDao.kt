@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface DailySignalsDao {
+    @Query("SELECT date FROM daily_signals WHERE syncHlc IS NULL ORDER BY date ASC")
+    suspend fun getUnsyncedDates(): List<String>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOrUpdate(signal: DailySignalsEntity)
 

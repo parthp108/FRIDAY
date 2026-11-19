@@ -85,7 +85,7 @@ fun SettingsScreen(
             )
         }
 
-        // Google Drive Sync Stage 1 Card
+        // Encrypted Google Drive Sync Card
         item {
             val context = LocalContext.current
 
@@ -103,14 +103,14 @@ fun SettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "Google Drive Sync",
+                        text = "Encrypted Google Drive Sync",
                         color = FridayCyan,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
 
                     Text(
-                        text = "Connect FRIDAY to Google Drive and test file upload/download.",
+                        text = "Back up the encrypted recovery key, restore it on another device, and run a manual encrypted sync.",
                         color = FridayMuted,
                         fontSize = 13.sp
                     )
@@ -129,7 +129,7 @@ fun SettingsScreen(
                             contentColor = FridayBackground
                         )
                     ) {
-                        Text("Configure Drive")
+                        Text("Configure encrypted Drive sync")
                     }
                 }
             }
