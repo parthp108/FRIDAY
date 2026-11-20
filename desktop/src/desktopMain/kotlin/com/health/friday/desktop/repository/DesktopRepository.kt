@@ -97,11 +97,13 @@ class DesktopRepository(
     val nutritionRepo = NutritionRepository(this::readOnly)
     val healthRepo = HealthRepository(this::readOnly)
     val tasksRepo = TasksRepository(this::readOnly)
+    val healthArchiveRepo = HealthArchiveRepository()
 
     private val cloudRemoteApplier = DesktopCloudSyncRemoteApplier(
         nutritionRepository = nutritionRepo,
         healthRepository = healthRepo,
-        tasksRepository = tasksRepo
+        tasksRepository = tasksRepo,
+        healthArchiveRepository = healthArchiveRepo
     )
     val cloudSyncRuntime = DesktopCloudSyncRuntime(
         deviceId = DesktopIdentity.deviceId,
@@ -194,6 +196,7 @@ class DesktopRepository(
     val tasks = tasksRepo.tasks
     val goals = tasksRepo.goals
     val journalEntries = tasksRepo.journalEntries
+    val healthArchiveRecords = healthArchiveRepo.records
     val reminders = tasksRepo.reminders
 
     val apiKey = MutableStateFlow("")

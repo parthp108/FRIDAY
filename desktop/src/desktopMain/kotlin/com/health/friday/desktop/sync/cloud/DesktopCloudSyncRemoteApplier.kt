@@ -1,5 +1,6 @@
 package com.health.friday.desktop.sync.cloud
 
+import com.health.friday.desktop.repository.HealthArchiveRepository
 import com.health.friday.desktop.repository.HealthRepository
 import com.health.friday.desktop.repository.NutritionRepository
 import com.health.friday.desktop.repository.TasksRepository
@@ -33,7 +34,8 @@ import java.time.LocalDate
 class DesktopCloudSyncRemoteApplier(
     private val nutritionRepository: NutritionRepository,
     private val healthRepository: HealthRepository,
-    private val tasksRepository: TasksRepository
+    private val tasksRepository: TasksRepository,
+    private val healthArchiveRepository: HealthArchiveRepository = HealthArchiveRepository()
 ) {
     private val json = Json {
         ignoreUnknownKeys = false
@@ -106,6 +108,21 @@ class DesktopCloudSyncRemoteApplier(
                 payload
             }
         tasksRepository.setCloudJournalEntries(journalEntries)
+
+        // Health archive payloads can contain sensitive measurements or route data.
+        // Validate their identity, but expose only safe metadata to the desktop UI.
+        val healthRecords = active.filter { it.entityType == CloudSyncEntityTypes.HEALTH_RECORD }
+            .map { row ->
+                val payload = decode<HealthRecordSyncPayload>(row.payloadJson, "health record")
+                require(payload.archiveId == row.entityId) {
+                    "Health-record payload ID does not match its cloud entity ID."
+                }
+                require(payload.archiveId == "${payload.sourceDeviceId}:${payload.recordType}:${payload.recordId}") {
+                    "Health-record payload identity is inconsistent."
+                }
+                payload
+            }
+        healthArchiveRepository.setCloudRecords(healthRecords)
 
         val latestSignals = active.asSequence()
             .filter { it.entityType == CloudSyncEntityTypes.DAILY_SIGNALS }

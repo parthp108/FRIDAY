@@ -16,14 +16,29 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.health.friday.desktop.repository.HealthArchiveRecordSummary
 import com.health.friday.desktop.ui.components.StatCard
 import com.health.friday.shared.models.DailySignalDto
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
-fun DesktopHealthScreen(signals: DailySignalDto, isPhoneConnected: Boolean) {
+fun DesktopHealthScreen(
+    signals: DailySignalDto,
+    isPhoneConnected: Boolean,
+    healthArchiveRecords: List<HealthArchiveRecordSummary> = emptyList()
+) {
     var selectedTabIndex by remember { mutableStateOf(0) }
     val tabs = listOf("Overview", "Activity", "Heart", "Sleep", "Vitals", "Body")
+
+    val archiveCounts = remember(healthArchiveRecords) {
+        healthArchiveRecords.groupingBy { it.recordType }.eachCount().toList().sortedBy { it.first }
+    }
+    val recentArchiveRecords = remember(healthArchiveRecords) {
+        healthArchiveRecords.sortedByDescending { it.startTimeMs ?: it.endTimeMs ?: it.lastModifiedTimeMs }.take(10)
+    }
+    val archiveDateFormat = remember { SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()) }
 
     val water = signals.waterIntakeMl
     val activeMins = signals.activeMinutes
@@ -203,13 +218,50 @@ fun DesktopHealthScreen(signals: DailySignalDto, isPhoneConnected: Boolean) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Health Connect & Telemetry Bridge", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text(
-                            "All health metrics are mirrored live from your phone via USB bridge. Values update automatically as phone data syncs.",
+                            "Daily summary values are mirrored over USB. Detailed Health Connect records are transferred through encrypted Google Drive sync.",
                             color = Color(0xFFCBD5E1), fontSize = 13.sp
                         )
                         Text(
                             if (isPhoneConnected) "Phone link: connected (USB, live)" else "Phone link: offline",
                             color = Color(0xFF94A3B8), fontSize = 12.sp
                         )
+                    }
+                }
+            }
+
+            // Encrypted Health Connect archive overview. Only metadata is rendered;
+            // full per-record payloads remain in the protected cloud-sync store.
+            item {
+                Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Encrypted Health Connect Archive", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(
+                            "${healthArchiveRecords.size} records across ${archiveCounts.size} record types",
+                            color = Color(0xFF94A3B8), fontSize = 12.sp
+                        )
+                        if (healthArchiveRecords.isEmpty()) {
+                            Text("No Health Connect archive records have been synced to this PC yet.", color = Color(0xFFCBD5E1), fontSize = 13.sp)
+                        } else {
+                            archiveCounts.forEach { (recordType, count) ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text(recordType, color = Color(0xFFCBD5E1), fontSize = 12.sp)
+                                    Text(count.toString(), color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                }
+                            }
+                            HorizontalDivider(color = Color(0xFF334155))
+                            Text("Recently updated records", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            recentArchiveRecords.forEach { record ->
+                                val timestamp = record.startTimeMs ?: record.endTimeMs ?: record.lastModifiedTimeMs
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(record.recordType, color = Color(0xFFE2E8F0), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        "${archiveDateFormat.format(Date(timestamp))}  •  ${record.dataOriginPackage}",
+                                        color = Color(0xFF94A3B8), fontSize = 11.sp
+                                    )
+                                }
+                            }
+                            Text("Raw record payloads are not displayed in this overview.", color = Color(0xFF64748B), fontSize = 11.sp)
+                        }
                     }
                 }
             }

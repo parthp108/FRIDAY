@@ -54,6 +54,12 @@ class HudScreenModel(
         }
 
         screenModelScope.launch(Dispatchers.IO) {
+            repository.healthArchiveRecords.collect { records ->
+                updateState { it.copy(healthArchiveRecords = records) }
+            }
+        }
+
+        screenModelScope.launch(Dispatchers.IO) {
             repository.reminders.collect { r ->
                 updateState { it.copy(reminders = r) }
             }

@@ -1,5 +1,6 @@
 package com.health.friday.desktop.features.hud
 
+import com.health.friday.desktop.repository.HealthArchiveRecordSummary
 import com.health.friday.desktop.ui.components.DesktopNavTab
 import com.health.friday.shared.models.*
 import com.health.friday.shared.sync.cloud.GoalSyncPayload
@@ -19,6 +20,7 @@ data class HudState(
     val tasks: List<FridayTaskDto> = emptyList(),
     val goals: List<GoalSyncPayload> = emptyList(),
     val journalEntries: List<JournalSyncPayload> = emptyList(),
+    val healthArchiveRecords: List<HealthArchiveRecordSummary> = emptyList(),
     val reminders: List<FridayReminderDto> = emptyList(),
     val meals: List<FridayMealDto> = emptyList(),
     val dailySignals: DailySignalDto = DailySignalDto()

@@ -111,7 +111,11 @@ class DesktopHudScreen : Screen {
                                         screenModel.processIntent(HudIntent.ToggleTask(it))
                                     }
                                     DesktopNavTab.LOOM -> DesktopLoomScreen(state.dailySignals, state.meals)
-                                    DesktopNavTab.HEALTH -> DesktopHealthScreen(state.dailySignals, state.isPhoneConnected)
+                                    DesktopNavTab.HEALTH -> DesktopHealthScreen(
+                                        state.dailySignals,
+                                        state.isPhoneConnected,
+                                        state.healthArchiveRecords
+                                    )
                                     DesktopNavTab.NUTRITION -> DesktopNutritionScreen(state.meals) { name, cal, p, c, f ->
                                         screenModel.processIntent(HudIntent.LogMeal(name, cal, p, c, f))
                                     }
