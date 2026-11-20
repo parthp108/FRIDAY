@@ -115,6 +115,7 @@ class HealthTelemetryWorker(
             EveningCheckinWorker.schedule(context)
             DaytimeWaterWorker.schedule(context)
             com.health.friday.device.HealthConnectArchiveWorker.schedulePeriodic(context)
+            com.health.friday.sync.cloud.DriveSyncWorker.schedulePeriodic(context)
         }
     }
 }

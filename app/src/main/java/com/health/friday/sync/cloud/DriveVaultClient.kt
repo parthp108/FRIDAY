@@ -20,6 +20,11 @@ internal data class DriveFilePage(
     val nextPageToken: String?
 )
 
+internal data class DriveChangesResult(
+    val newFiles: List<DriveVaultFile>,
+    val newPageToken: String
+)
+
 /** JSON parser kept separate so pagination and field-order behavior can be unit tested. */
 internal object DriveFilePageParser {
     fun parse(jsonText: String): DriveFilePage {
@@ -150,6 +155,69 @@ class DriveVaultClient {
                     .removeSuffix(RECOVERY_FILE_SUFFIX)
                     .toLongOrNull() ?: 0L
             }
+    }
+
+    internal suspend fun fetchStartPageToken(accessToken: String): String = withContext(Dispatchers.IO) {
+        val url = "$DRIVE_API/changes/startPageToken"
+        val response = request(accessToken, "GET", url)
+        JSONObject(response).getString("startPageToken")
+    }
+
+    internal suspend fun fetchChanges(
+        accessToken: String,
+        pageToken: String,
+        folderId: String
+    ): DriveChangesResult = withContext(Dispatchers.IO) {
+        val files = mutableListOf<DriveVaultFile>()
+        var currentToken: String? = pageToken
+        var latestToken = pageToken
+
+        while (!currentToken.isNullOrBlank()) {
+            val url = "$DRIVE_API/changes?pageToken=$currentToken&fields=nextPageToken,newStartPageToken,changes(file(id,name,parents,trashed))"
+            val response = request(accessToken, "GET", url)
+
+            val root = JSONObject(response)
+            val changesArray = root.optJSONArray("changes") ?: JSONArray()
+
+            for (i in 0 until changesArray.length()) {
+                val change = changesArray.optJSONObject(i) ?: continue
+                val fileObj = change.optJSONObject("file") ?: continue
+                val trashed = fileObj.optBoolean("trashed", false)
+                if (trashed) continue
+
+                val parents = fileObj.optJSONArray("parents") ?: JSONArray()
+                var isInVault = false
+                for (j in 0 until parents.length()) {
+                    if (parents.optString(j) == folderId) {
+                        isInVault = true
+                        break
+                    }
+                }
+
+                if (isInVault) {
+                    val id = fileObj.optString("id")
+                    val name = fileObj.optString("name")
+                    if (id.isNotBlank() && name.isNotBlank()) {
+                        files.add(DriveVaultFile(id = id, name = name))
+                    }
+                }
+            }
+
+            val nextToken = root.optString("nextPageToken").takeIf { it.isNotBlank() }
+            val newStartToken = root.optString("newStartPageToken").takeIf { it.isNotBlank() }
+
+            if (newStartToken != null) {
+                latestToken = newStartToken
+            }
+
+            if (nextToken != null && nextToken != currentToken) {
+                currentToken = nextToken
+            } else {
+                break
+            }
+        }
+
+        DriveChangesResult(newFiles = files, newPageToken = latestToken)
     }
 
     private fun listAllFiles(accessToken: String, query: String): List<DriveVaultFile> {

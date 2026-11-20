@@ -207,6 +207,8 @@ class DesktopRepository(
     val phoneName: StateFlow<String?> = syncClient.peerName
 
     fun initSync() {
+        cloudSyncRuntime.startBackgroundSync(scope)
+
         syncClient.connect(
             onMealsReceived = { nutritionRepo.setMeals(it) },
             onTasksReceived = { tasksRepo.setTasks(it) },
