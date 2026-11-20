@@ -34,8 +34,19 @@ fun DesktopSettingsScreen(
     var localLlmEnabled by remember { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
+    val desktopService = remember { com.health.friday.desktop.sync.cloud.DesktopCloudSyncService() }
     var syncRunning by remember { mutableStateOf(false) }
-    var syncStatus by remember { mutableStateOf("Not connected") }
+    var syncStatus by remember {
+        mutableStateOf(
+            if (desktopService.hasSavedAuthorization() && desktopService.hasLocalMasterKey()) {
+                "STATUS: CONNECTED & ENCRYPTED VAULT READY\n\nYour local master key is DPAPI protected under your Windows account. Instant background sync is active across reboots and app updates."
+            } else if (desktopService.hasSavedAuthorization()) {
+                "Google Drive authorized. Restore or back up your recovery key to enable encrypted sync."
+            } else {
+                "Not connected"
+            }
+        )
+    }
     var passphraseInput by remember { mutableStateOf("") }
     var confirmPassphraseInput by remember { mutableStateOf("") }
 

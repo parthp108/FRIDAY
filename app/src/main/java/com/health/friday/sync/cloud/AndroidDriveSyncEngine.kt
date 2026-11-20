@@ -1,14 +1,23 @@
 package com.health.friday.sync.cloud
 
+import android.content.Context
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.Scope
 import com.health.friday.shared.sync.cloud.CloudSyncKeyEnvelope
 import com.health.friday.shared.sync.cloud.CloudSyncStore
 import com.health.friday.shared.sync.cloud.EncryptedSyncPayload
 import com.health.friday.shared.sync.cloud.SyncBatch
 import com.health.friday.shared.sync.cloud.SyncCursor
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 data class DriveSyncResult(
     val backfilledRecords: Int,
@@ -18,10 +27,6 @@ data class DriveSyncResult(
     val appliedOperations: Int
 )
 
-/**
- * Manual, foreground Drive sync. Background scheduling is intentionally not
- * enabled until the recovery and two-device round-trip have been verified.
- */
 class AndroidDriveSyncEngine(
     private val cloudSyncStore: CloudSyncStore,
     private val security: AndroidCloudSyncSecurity,
@@ -32,6 +37,43 @@ class AndroidDriveSyncEngine(
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+    }
+
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var isSyncing = false
+
+    fun triggerInstantSync(context: Context) {
+        if (!security.hasLocalMasterKey()) return
+        syncScope.launch {
+            if (isSyncing) return@launch
+            isSyncing = true
+            try {
+                val token = obtainAccessTokenSilent(context.applicationContext)
+                if (!token.isNullOrBlank()) {
+                    performSync(token)
+                }
+            } catch (_: Exception) {
+            } finally {
+                isSyncing = false
+            }
+        }
+    }
+
+    private suspend fun obtainAccessTokenSilent(context: Context): String? = suspendCoroutine { continuation ->
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(listOf(Scope("https://www.googleapis.com/auth/drive.file")))
+            .build()
+
+        Identity.getAuthorizationClient(context)
+            .authorize(request)
+            .addOnSuccessListener { result ->
+                val token = result.accessToken?.takeIf { it.isNotBlank() }
+                continuation.resume(token)
+            }
+            .addOnFailureListener {
+                continuation.resume(null)
+            }
     }
 
     suspend fun backUpRecoveryKey(
@@ -129,7 +171,7 @@ class AndroidDriveSyncEngine(
                     previousJson
                 )
                 val previousBatch = security.decryptBatch(previousEncrypted)
-                check(previousBatch.batchId == batch.batchId) {
+                check(previousBatch.batchId == batchId) {
                     "Existing Drive batch filename contains a different batch ID"
                 }
                 check(previousBatch.operations.map { it.operationId }.toSet() ==

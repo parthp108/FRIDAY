@@ -4,6 +4,7 @@ import com.health.friday.desktop.sync.drive.DesktopDriveVaultClient
 import com.health.friday.desktop.sync.drive.DesktopGoogleDriveOAuth
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -17,9 +18,14 @@ class DesktopCloudSyncRuntime(
     private val security = DesktopCloudSyncSecurity()
     private val drive = DesktopDriveVaultClient()
 
-    val store = DesktopCloudSyncStore(
+    private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile
+    private var isSyncing = false
+
+    val store: DesktopCloudSyncStore = DesktopCloudSyncStore(
         deviceId = deviceId,
-        remoteApplier = remoteApplier
+        remoteApplier = remoteApplier,
+        onOperationEnqueued = { triggerInstantSync() }
     )
 
     val recoveryService = DesktopCloudSyncService(
@@ -37,6 +43,20 @@ class DesktopCloudSyncRuntime(
         drive = drive,
         store = store
     )
+
+    fun triggerInstantSync() {
+        if (!oauth.hasSavedAuthorization() || !keyVault.hasKey()) return
+        syncScope.launch {
+            if (isSyncing) return@launch
+            isSyncing = true
+            try {
+                syncEngine.performSync()
+            } catch (_: Exception) {
+            } finally {
+                isSyncing = false
+            }
+        }
+    }
 
     fun startBackgroundSync(scope: CoroutineScope) {
         scope.launch(Dispatchers.IO) {

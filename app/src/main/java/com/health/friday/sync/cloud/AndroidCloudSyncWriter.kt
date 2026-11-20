@@ -28,7 +28,8 @@ class AndroidCloudSyncWriter(
     private val database: FridayDatabase,
     private val dao: CloudSyncDao,
     private val clock: AndroidHybridLogicalClock,
-    val deviceId: String
+    val deviceId: String,
+    private val onOperationEnqueued: (() -> Unit)? = null
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -155,5 +156,6 @@ class AndroidCloudSyncWriter(
         check(inserted != -1L) {
             "Cloud sync operation ID collision: ${operation.operationId}"
         }
+        onOperationEnqueued?.invoke()
     }
 }

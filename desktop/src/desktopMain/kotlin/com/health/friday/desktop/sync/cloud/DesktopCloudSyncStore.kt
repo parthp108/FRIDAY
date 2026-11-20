@@ -74,7 +74,8 @@ class DesktopCloudSyncStore internal constructor(
     private val remoteApplier: DesktopCloudSyncRemoteApplier? = null,
     private val fileStore: DpapiFileStore = DpapiFileStore(
         DpapiFileStore.appDataFile(STATE_FILE_NAME)
-    )
+    ),
+    private val onOperationEnqueued: (() -> Unit)? = null
 ) : CloudSyncStore {
     private val lock = Any()
     private val json = Json {
@@ -149,6 +150,7 @@ class DesktopCloudSyncStore internal constructor(
         // Persist the local mutation and its entity projection before publishing it.
         // This keeps newly created/edited records visible after an offline restart.
         remoteApplier?.publishSnapshot(committedSnapshot)
+        onOperationEnqueued?.invoke()
     }
     override suspend fun pendingOutbox(limit: Int): List<SyncOperation> {
         require(limit > 0) { "limit must be greater than zero." }

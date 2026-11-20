@@ -87,12 +87,15 @@ class AppContainer(private val context: Context) {
             nodeId = deviceIdentity.deviceId
         )
     }
-    val cloudSyncWriter by lazy {
+    val cloudSyncWriter: AndroidCloudSyncWriter by lazy {
         AndroidCloudSyncWriter(
             database = database,
             dao = database.cloudSyncDao(),
             clock = cloudSyncClock,
-            deviceId = deviceIdentity.deviceId
+            deviceId = deviceIdentity.deviceId,
+            onOperationEnqueued = {
+                driveSyncEngine.triggerInstantSync(context)
+            }
         )
     }
     val cloudSyncRemoteApplier by lazy {

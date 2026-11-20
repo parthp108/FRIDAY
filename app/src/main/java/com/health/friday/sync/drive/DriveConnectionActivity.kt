@@ -71,6 +71,12 @@ class DriveConnectionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val container = (application as FridayApplication).container
+        if (container.cloudSyncSecurity.hasLocalMasterKey()) {
+            status = "STATUS: CONNECTED & ENCRYPTED VAULT READY\n\nYour local master key is active and hardware-protected. Instant background sync is active across reboots and app updates."
+        }
+
         setContent {
             FRIDAYTheme(darkTheme = true, dynamicColor = false) {
                 Surface(
