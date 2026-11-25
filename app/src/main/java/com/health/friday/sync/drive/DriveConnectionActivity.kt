@@ -36,6 +36,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import com.health.friday.FridayApplication
+import com.health.friday.sync.cloud.DriveSyncExecutionResult
 import com.health.friday.sync.cloud.DriveSyncState
 import com.health.friday.ui.theme.FRIDAYTheme
 import kotlinx.coroutines.Dispatchers
@@ -248,8 +249,62 @@ class DriveConnectionActivity : ComponentActivity() {
             return
         }
 
+        var awaitingAuthorizationResult = false
+
         lifecycleScope.launch {
             try {
+                if (action == DriveAction.SYNC) {
+                    val container = (application as FridayApplication).container
+
+                    when (
+                        val outcome = withContext(Dispatchers.IO) {
+                            container.driveSyncEngine.performSyncWithAccessToken(
+                                context = this@DriveConnectionActivity,
+                                accessToken = token
+                            )
+                        }
+                    ) {
+                        is DriveSyncExecutionResult.Success -> {
+                            val result = outcome.result
+                            statusText =
+                                "SYNC COMPLETED\n" +
+                                "Previously existing records queued: ${result.backfilledRecords}\n" +
+                                "Uploaded batches: ${result.uploadedBatches}\n" +
+                                "Uploaded operations: ${result.uploadedOperations}\n" +
+                                "Downloaded batches: ${result.downloadedBatches}\n" +
+                                "Applied operations: ${result.appliedOperations}"
+                        }
+
+                        is DriveSyncExecutionResult.AuthRequired -> {
+                            val pendingIntent = outcome.pendingIntent
+                            if (pendingIntent != null) {
+                                statusText = "Additional Google Drive authorization is required."
+                                awaitingAuthorizationResult = true
+                                authorizationLauncher.launch(
+                                    IntentSenderRequest.Builder(
+                                        pendingIntent.intentSender
+                                    ).build()
+                                )
+                                return@launch
+                            }
+
+                            statusText = "Google Drive authorization is required. Use Reconnect Google Drive."
+                        }
+
+                        is DriveSyncExecutionResult.TransientFailure -> {
+                            statusText =
+                                "SYNC TEMPORARILY FAILED\n${outcome.cause.message ?: "Network or Google service error"}"
+                        }
+
+                        is DriveSyncExecutionResult.PermanentFailure -> {
+                            statusText =
+                                "SYNC FAILED\n${outcome.cause.message ?: "Permanent Drive error"}"
+                        }
+                    }
+
+                    return@launch
+                }
+
                 val container = (application as FridayApplication).container
                 val message = withContext(Dispatchers.IO) {
                     when (action) {
@@ -263,11 +318,7 @@ class DriveConnectionActivity : ComponentActivity() {
                             val envelope = container.driveSyncEngine.restoreRecoveryKey(token, recovery)
                             "RECOVERY KEY RESTORED\nKey ID: ${envelope.keyId}\n\nThis device now has the same cloud encryption key."
                         }
-                        DriveAction.SYNC -> {
-                            val result = container.driveSyncEngine.performSync(token)
-                            container.driveSyncStatusRepository.updateStatus(com.health.friday.sync.cloud.DriveSyncState.SUCCESS)
-                            "SYNC COMPLETED\nPreviously existing records queued: ${result.backfilledRecords}\nUploaded batches: ${result.uploadedBatches}\nUploaded operations: ${result.uploadedOperations}\nDownloaded batches: ${result.downloadedBatches}\nApplied operations: ${result.appliedOperations}"
-                        }
+                        DriveAction.SYNC -> error("SYNC is handled through performSyncWithAccessToken()")
                     }
                 }
                 statusText = message
@@ -278,10 +329,12 @@ class DriveConnectionActivity : ComponentActivity() {
                     error.message ?: error.javaClass.simpleName
                 )
             } finally {
-                phrase?.fill('\u0000')
-                pendingPassphrase = null
-                pendingAction = null
-                busy = false
+                if (!awaitingAuthorizationResult) {
+                    phrase?.fill('\u0000')
+                    pendingPassphrase = null
+                    pendingAction = null
+                    busy = false
+                }
             }
         }
     }

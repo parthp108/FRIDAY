@@ -1,10 +1,10 @@
 package com.health.friday.sync.cloud
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
-import java.net.SocketTimeoutException
 
 class DrivePhase1AuthTest {
 
@@ -17,6 +17,22 @@ class DrivePhase1AuthTest {
         val reqException = DriveAuthorizationRequiredException(null, "Interactive auth needed")
         assertTrue(reqException is Exception)
         assertEquals("Interactive auth needed", reqException.message)
+    }
+
+    @Test
+    fun testDriveHttpExceptionTransientClassification() {
+        val rateLimitEx = DriveHttpException(429, "Too Many Requests", "rateLimitExceeded")
+        assertTrue(rateLimitEx.isTransient)
+        assertEquals("rateLimitExceeded", rateLimitEx.reason)
+
+        val serverError = DriveHttpException(503, "Service Unavailable", "backendError")
+        assertTrue(serverError.isTransient)
+
+        val badRequest = DriveHttpException(400, "Bad Request", "invalidParameter")
+        assertFalse(badRequest.isTransient)
+
+        val forbidden = DriveHttpException(403, "Forbidden", "quotaExceeded")
+        assertFalse(forbidden.isTransient)
     }
 
     @Test
