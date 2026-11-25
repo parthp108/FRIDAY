@@ -79,7 +79,7 @@ class DesktopCloudSyncStore internal constructor(
 ) : CloudSyncStore {
     private val lock = Any()
     private val json = Json {
-        ignoreUnknownKeys = false
+        ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
@@ -366,9 +366,14 @@ class DesktopCloudSyncStore internal constructor(
             require(plaintext.size <= MAX_STATE_BYTES) {
                 "FRIDAY desktop cloud-sync state exceeds the supported size limit."
             }
-            val decoded = json.decodeFromString<DesktopCloudSyncDiskState>(
-                String(plaintext, StandardCharsets.UTF_8)
-            )
+            val decoded = runCatching {
+                json.decodeFromString<DesktopCloudSyncDiskState>(
+                    String(plaintext, StandardCharsets.UTF_8)
+                )
+            }.getOrElse { e ->
+                System.err.println("[DesktopCloudSyncStore] Saved state corrupted or unparseable: ${e.message}")
+                return DesktopCloudSyncDiskState()
+            }
             require(decoded.formatVersion == STATE_FORMAT_VERSION) {
                 "Unsupported FRIDAY desktop cloud-sync state version: ${decoded.formatVersion}."
             }

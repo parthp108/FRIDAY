@@ -50,11 +50,8 @@ compose.desktop {
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
             "-XX:+UseZGC",
-            "-XX:+ZGenerational",
-            "-XX:ZAllocationSpikeTolerance=5",
             "-Xmx2G",
-            "-Xms256M",
-            "-Dskiko.renderApi=DIRECT3D"
+            "-Xms256M"
         )
 
         nativeDistributions {
@@ -83,11 +80,8 @@ tasks.withType<JavaExec> {
     jvmArgs(
         "--enable-native-access=ALL-UNNAMED",
         "-XX:+UseZGC",
-        "-XX:+ZGenerational",
-        "-XX:ZAllocationSpikeTolerance=5",
         "-Xmx2G",
-        "-Xms256M",
-        "-Dskiko.renderApi=DIRECT3D"
+        "-Xms256M"
     )
 }
 
@@ -131,10 +125,10 @@ tasks.matching {
     dependsOn(killRunningDesktopProcess)
 }
 
-// Configure Android Studio's default `desktopRun` task so clicking Run in IDE compiles, updates FRIDAY.exe, launches it, and finishes immediately!
-tasks.matching { it.name == "desktopRun" || it.name == "run" || it.name == "runDistributable" }.configureEach {
+// Configure Android Studio's default `desktopRun` task so clicking Run in IDE compiles, updates FRIDAY.exe, launches it!
+tasks.matching { it.name == "runDistributable" }.configureEach {
     dependsOn("createDistributable")
-    actions.clear() // Clear blocking JavaExec task so Android Studio build completes exit code 0!
+    actions.clear()
 
     val exeProvider = layout.buildDirectory.file("compose/binaries/main/app/FRIDAY/FRIDAY.exe")
     inputs.file(exeProvider)

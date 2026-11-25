@@ -73,7 +73,7 @@ fun main() {
             }
         }
 
-        if (isTraySupported) {
+        if (isTraySupported && appIcon != null) {
             Tray(
                 icon = appIcon,
                 tooltip = "FRIDAY ECo (Daemon Running - Alt+Space to Summon)",
