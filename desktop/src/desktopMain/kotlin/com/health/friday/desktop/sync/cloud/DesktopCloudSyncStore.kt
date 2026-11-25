@@ -372,7 +372,9 @@ class DesktopCloudSyncStore internal constructor(
                 )
             }.getOrElse { e ->
                 System.err.println("[DesktopCloudSyncStore] Saved state corrupted or unparseable: ${e.message}")
-                return DesktopCloudSyncDiskState()
+                val freshState = DesktopCloudSyncDiskState()
+                runCatching { writeState(freshState) }
+                return freshState
             }
             require(decoded.formatVersion == STATE_FORMAT_VERSION) {
                 "Unsupported FRIDAY desktop cloud-sync state version: ${decoded.formatVersion}."

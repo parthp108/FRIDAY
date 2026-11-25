@@ -32,7 +32,6 @@ private val indianFoodDatabase = listOf(
     IndianFoodEntry(1015, "Idli", 50.0, 65.0, 2.0, 13.5, 0.4, listOf("idli", "idly", "rice cake"), listOf("Breakfast")),
     IndianFoodEntry(1013, "Masala Dosa", 150.0, 300.0, 6.0, 48.0, 9.5, listOf("dosa", "masala dosa"), listOf("Breakfast", "Dinner")),
     IndianFoodEntry(1014, "Plain Dosa", 100.0, 180.0, 4.0, 32.0, 4.2, listOf("dosa", "plain dosa"), listOf("Breakfast", "Dinner")),
-    IndianFoodEntry(1003, "Aloo Paratha", 100.0, 290.0, 5.2, 42.5, 11.2, listOf("paratha", "aloo paratha"), listOf("Breakfast", "Lunch")),
     IndianFoodEntry(1026, "Egg Bhurji / Scrambled Eggs", 120.0, 210.0, 13.0, 3.5, 16.0, listOf("egg bhurji", "bhurji", "scrambled egg", "egg"), listOf("Breakfast", "Dinner")),
     IndianFoodEntry(1030, "Masala Oats", 200.0, 180.0, 6.0, 30.0, 3.8, listOf("oats", "masala oats", "oatmeal"), listOf("Breakfast")),
     IndianFoodEntry(1017, "Medu Vada", 60.0, 190.0, 4.5, 18.0, 11.0, listOf("vada", "medu vada", "fritter"), listOf("Breakfast", "Snack")),

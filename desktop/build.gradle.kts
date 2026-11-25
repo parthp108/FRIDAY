@@ -49,7 +49,6 @@ compose.desktop {
         javaHome = File("C:/Users/parth/.jdks/jbr-25.0.4.1").takeIf { it.exists() }?.absolutePath ?: System.getenv("JAVA_HOME")
         jvmArgs += listOf(
             "--enable-native-access=ALL-UNNAMED",
-            "-XX:+UseZGC",
             "-Xmx2G",
             "-Xms256M"
         )
@@ -79,7 +78,6 @@ compose.desktop {
 tasks.withType<JavaExec> {
     jvmArgs(
         "--enable-native-access=ALL-UNNAMED",
-        "-XX:+UseZGC",
         "-Xmx2G",
         "-Xms256M"
     )
@@ -100,12 +98,19 @@ tasks.withType<Jar> {
 val killRunningDesktopProcess = tasks.register("killRunningDesktopProcess") {
     doLast {
         runCatching {
+            ProcessBuilder("cmd", "/c", "taskkill /F /IM FRIDAY.exe /T >nul 2>&1").start().waitFor()
+        }
+        runCatching {
             val script = """
-                Get-Process -ErrorAction SilentlyContinue | Where-Object {
-                    (${'$'}_.ProcessName -eq 'FRIDAY' -or ${'$'}_.ProcessName -eq 'java' -or ${'$'}_.ProcessName -eq 'javaw') -and
-                    (${'$'}_.ProcessName -ne 'ollama') -and
-                    ((${'$'}_.Path -and ${'$'}_.Path -like '*FRIDAY*') -or (${'$'}_.CommandLine -and ${'$'}_.CommandLine -like '*friday*'))
-                } | Stop-Process -Force -ErrorAction SilentlyContinue
+                Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+                    try {
+                        (${'$'}_.Name -match 'java|FRIDAY') -and ${'$'}_.CommandLine -and (
+                            ${'$'}_.CommandLine -like '*MainKt*' -or
+                            ${'$'}_.CommandLine -like '*\desktop\build\*' -or
+                            ${'$'}_.CommandLine -like '*FRIDAY.exe*'
+                        )
+                    } catch { ${'$'}false }
+                } | ForEach-Object { Stop-Process -Id ${'$'}_.ProcessId -Force -ErrorAction SilentlyContinue }
             """.trimIndent()
             ProcessBuilder("powershell", "-NoProfile", "-Command", script).start().waitFor()
         }
@@ -116,6 +121,8 @@ tasks.matching {
     it.name != "killRunningDesktopProcess" && (
         it.name.startsWith("compile") ||
         it.name.startsWith("package") ||
+        it.name.startsWith("create") ||
+        it.name.startsWith("prepare") ||
         it.name.contains("Distributable") ||
         it.name.contains("Run") ||
         it.name == "run"
@@ -126,7 +133,7 @@ tasks.matching {
 }
 
 // Configure Android Studio's default `desktopRun` task so clicking Run in IDE compiles, updates FRIDAY.exe, launches it!
-tasks.matching { it.name == "runDistributable" }.configureEach {
+tasks.matching { it.name == "runDistributable" || it.name == "desktopRun" }.configureEach {
     dependsOn("createDistributable")
     actions.clear()
 
