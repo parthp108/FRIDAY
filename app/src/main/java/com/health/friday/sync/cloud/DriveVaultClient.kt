@@ -56,12 +56,20 @@ internal object DriveFilePageParser {
  * All calls use drive.file-scoped files created by this OAuth app.
  */
 class DriveVaultClient {
+    @Volatile
+    private var cachedFolderId: String? = null
+
     suspend fun ensureVaultFolder(accessToken: String): String = withContext(Dispatchers.IO) {
         require(accessToken.isNotBlank())
+        cachedFolderId?.let { return@withContext it }
+
         val query = "name = '$VAULT_FOLDER_NAME' and mimeType = '$FOLDER_MIME' and trashed = false"
         val existing = listAllFiles(accessToken, query)
             .firstOrNull { it.name == VAULT_FOLDER_NAME }
-        if (existing != null) return@withContext existing.id
+        if (existing != null) {
+            cachedFolderId = existing.id
+            return@withContext existing.id
+        }
 
         val metadata = JSONObject()
             .put("name", VAULT_FOLDER_NAME)
@@ -74,8 +82,10 @@ class DriveVaultClient {
             contentType = "application/json; charset=UTF-8",
             body = metadata.toString().toByteArray(Charsets.UTF_8)
         )
-        JSONObject(response).optString("id").takeIf { it.isNotBlank() }
+        val folderId = JSONObject(response).optString("id").takeIf { it.isNotBlank() }
             ?: throw IOException("Google Drive created the vault folder without returning an ID")
+        cachedFolderId = folderId
+        return@withContext folderId
     }
 
     suspend fun uploadTextFile(

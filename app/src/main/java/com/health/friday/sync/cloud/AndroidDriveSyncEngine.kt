@@ -43,6 +43,17 @@ class AndroidDriveSyncEngine(
     @Volatile
     private var isSyncing = false
 
+    fun saveAccessToken(context: Context, token: String) {
+        if (token.isBlank()) return
+        val prefs = context.getSharedPreferences("friday_drive_auth_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putString("access_token", token).putLong("saved_at", System.currentTimeMillis()).apply()
+    }
+
+    fun getSavedAccessToken(context: Context): String? {
+        val prefs = context.getSharedPreferences("friday_drive_auth_prefs", Context.MODE_PRIVATE)
+        return prefs.getString("access_token", null)?.takeIf { it.isNotBlank() }
+    }
+
     fun triggerInstantSync(context: Context) {
         if (!security.hasLocalMasterKey()) return
         syncScope.launch {
@@ -60,20 +71,30 @@ class AndroidDriveSyncEngine(
         }
     }
 
-    private suspend fun obtainAccessTokenSilent(context: Context): String? = suspendCoroutine { continuation ->
-        val request = AuthorizationRequest.builder()
-            .setRequestedScopes(listOf(Scope("https://www.googleapis.com/auth/drive.file")))
-            .build()
+    private suspend fun obtainAccessTokenSilent(context: Context): String? {
+        val savedToken = getSavedAccessToken(context)
+        if (!savedToken.isNullOrBlank()) {
+            return savedToken
+        }
 
-        Identity.getAuthorizationClient(context)
-            .authorize(request)
-            .addOnSuccessListener { result ->
-                val token = result.accessToken?.takeIf { it.isNotBlank() }
-                continuation.resume(token)
-            }
-            .addOnFailureListener {
-                continuation.resume(null)
-            }
+        return suspendCoroutine { continuation ->
+            val request = AuthorizationRequest.builder()
+                .setRequestedScopes(listOf(Scope("https://www.googleapis.com/auth/drive.file")))
+                .build()
+
+            Identity.getAuthorizationClient(context)
+                .authorize(request)
+                .addOnSuccessListener { result ->
+                    val token = result.accessToken?.takeIf { it.isNotBlank() }
+                    if (!token.isNullOrBlank()) {
+                        saveAccessToken(context, token)
+                    }
+                    continuation.resume(token)
+                }
+                .addOnFailureListener {
+                    continuation.resume(null)
+                }
+        }
     }
 
     suspend fun backUpRecoveryKey(
@@ -81,6 +102,7 @@ class AndroidDriveSyncEngine(
         passphrase: CharArray
     ): CloudSyncKeyEnvelope = withContext(Dispatchers.IO) {
         require(accessToken.isNotBlank())
+        saveAccessToken(context = driveContextOrSave(accessToken), token = accessToken)
         val envelope = security.createRecoveryEnvelope(passphrase)
         val folderId = drive.ensureVaultFolder(accessToken)
         val fileName = "${DriveVaultClient.RECOVERY_FILE_PREFIX}${envelope.createdAtMs}${DriveVaultClient.RECOVERY_FILE_SUFFIX}"
@@ -126,6 +148,10 @@ class AndroidDriveSyncEngine(
             downloadedBatches = downloadResult.first,
             appliedOperations = downloadResult.second
         )
+    }
+
+    private fun driveContextOrSave(accessToken: String): Context {
+        return com.health.friday.FridayApplication.instance
     }
 
     private suspend fun uploadPendingOutbox(

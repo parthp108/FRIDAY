@@ -228,6 +228,7 @@ class DriveConnectionActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val container = (application as FridayApplication).container
+                container.driveSyncEngine.saveAccessToken(this@DriveConnectionActivity, token)
                 val message = withContext(Dispatchers.IO) {
                     when (action) {
                         DriveAction.BACKUP_KEY -> {

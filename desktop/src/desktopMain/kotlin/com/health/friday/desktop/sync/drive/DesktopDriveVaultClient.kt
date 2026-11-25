@@ -24,12 +24,19 @@ internal data class DesktopDriveFile(
 /** Google Drive v3 transport restricted to FRIDAY's app-created vault files. */
 internal class DesktopDriveVaultClient {
     private val json = Json { ignoreUnknownKeys = true }
+    @Volatile
+    private var cachedFolderId: String? = null
 
     fun ensureVaultFolder(accessToken: String): String {
         require(accessToken.isNotBlank())
+        cachedFolderId?.let { return it }
+
         val query = "name = '$VAULT_FOLDER_NAME' and mimeType = '$FOLDER_MIME' and trashed = false"
         val existing = listAllFiles(accessToken, query).firstOrNull { it.name == VAULT_FOLDER_NAME }
-        if (existing != null) return existing.id
+        if (existing != null) {
+            cachedFolderId = existing.id
+            return existing.id
+        }
 
         val metadata = buildJsonObject {
             put("name", VAULT_FOLDER_NAME)
@@ -43,9 +50,11 @@ internal class DesktopDriveVaultClient {
             contentType = "application/json; charset=UTF-8",
             body = metadata.toString().toByteArray(StandardCharsets.UTF_8)
         )
-        return json.parseToJsonElement(response).jsonObject["id"]
+        val folderId = json.parseToJsonElement(response).jsonObject["id"]
             ?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
             ?: throw IOException("Google Drive created FRIDAY_Vault without returning a folder ID.")
+        cachedFolderId = folderId
+        return folderId
     }
 
     fun uploadRecoveryEnvelope(

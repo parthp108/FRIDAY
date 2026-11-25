@@ -10,6 +10,7 @@ class FridayApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         container = AppContainer(this)
 
         if (BuildConfig.DEBUG) {
@@ -25,5 +26,10 @@ class FridayApplication : Application() {
     override fun onLowMemory() {
         super.onLowMemory()
         LocalLlmClient.onLowMemory()
+    }
+
+    companion object {
+        lateinit var instance: FridayApplication
+            private set
     }
 }
