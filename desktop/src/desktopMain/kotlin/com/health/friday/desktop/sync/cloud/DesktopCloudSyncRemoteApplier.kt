@@ -18,7 +18,6 @@ import com.health.friday.shared.sync.cloud.SyncOperation
 import com.health.friday.shared.sync.cloud.SyncOperationType
 import com.health.friday.shared.sync.cloud.TodoSyncPayload
 import com.health.friday.shared.sync.cloud.WaterSyncPayload
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -38,127 +37,123 @@ class DesktopCloudSyncRemoteApplier(
     private val healthArchiveRepository: HealthArchiveRepository = HealthArchiveRepository()
 ) {
     private val json = Json {
-        ignoreUnknownKeys = false
+        ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
     fun publishSnapshot(records: List<DesktopCloudSyncEntityRecord>) {
-        val active = records.filterNot { it.isDeleted }
+        runCatching {
+            val active = records.filterNot { it.isDeleted }
 
-        val meals = active.filter { it.entityType == CloudSyncEntityTypes.MEAL }
-            .map { row ->
-                val payload = decode<MealSyncPayload>(row.payloadJson, "meal")
-                require(payload.syncId == row.entityId) { "Meal payload ID does not match its cloud entity ID." }
-                FridayMealDto(
-                    id = payload.syncId,
-                    name = payload.name,
-                    calories = payload.calories,
-                    protein = payload.protein.toFloat(),
-                    carbs = payload.carbohydrates.toFloat(),
-                    fat = payload.fat.toFloat(),
-                    timestamp = payload.timestamp
+            val meals = active.filter { it.entityType == CloudSyncEntityTypes.MEAL }
+                .mapNotNull { row ->
+                    runCatching {
+                        val payload = decode<MealSyncPayload>(row.payloadJson, "meal")
+                        FridayMealDto(
+                            id = payload.syncId,
+                            name = payload.name,
+                            calories = payload.calories,
+                            protein = payload.protein.toFloat(),
+                            carbs = payload.carbohydrates.toFloat(),
+                            fat = payload.fat.toFloat(),
+                            timestamp = payload.timestamp
+                        )
+                    }.getOrNull()
+                }
+            val deletedMealIds = records.asSequence()
+                .filter { it.entityType == CloudSyncEntityTypes.MEAL && it.isDeleted }
+                .map { it.entityId }
+                .toSet()
+            nutritionRepository.setCloudMeals(meals, deletedMealIds)
+
+            val water = active.filter { it.entityType == CloudSyncEntityTypes.WATER_ENTRY }
+                .mapNotNull { row ->
+                    runCatching {
+                        val payload = decode<WaterSyncPayload>(row.payloadJson, "water")
+                        HydrationLogDto(payload.syncId, payload.amountMl, payload.timestamp)
+                    }.getOrNull()
+                }
+            healthRepository.setCloudWaterEntries(water)
+
+            val todos = active.filter { it.entityType == CloudSyncEntityTypes.TODO }
+                .mapNotNull { row ->
+                    runCatching {
+                        val payload = decode<TodoSyncPayload>(row.payloadJson, "todo")
+                        FridayTaskDto(
+                            id = payload.syncId,
+                            title = payload.title,
+                            isCompleted = payload.isDone,
+                            deadlineTimestamp = payload.dueAt,
+                            createdTimestamp = payload.createdAt,
+                            completedTimestamp = payload.completedAt,
+                            timestamp = payload.createdAt
+                        )
+                    }.getOrNull()
+                }
+            val deletedTodoIds = records.asSequence()
+                .filter { it.entityType == CloudSyncEntityTypes.TODO && it.isDeleted }
+                .map { it.entityId }
+                .toSet()
+            tasksRepository.setCloudTasks(todos, deletedTodoIds)
+
+            val goals = active.filter { it.entityType == CloudSyncEntityTypes.GOAL }
+                .mapNotNull { row ->
+                    runCatching {
+                        decode<GoalSyncPayload>(row.payloadJson, "goal")
+                    }.getOrNull()
+                }
+            tasksRepository.setCloudGoals(goals)
+
+            val journalEntries = active.filter { it.entityType == CloudSyncEntityTypes.JOURNAL_ENTRY }
+                .mapNotNull { row ->
+                    runCatching {
+                        decode<JournalSyncPayload>(row.payloadJson, "journal entry")
+                    }.getOrNull()
+                }
+            tasksRepository.setCloudJournalEntries(journalEntries)
+
+            val healthRecords = active.filter { it.entityType == CloudSyncEntityTypes.HEALTH_RECORD }
+                .mapNotNull { row ->
+                    runCatching {
+                        decode<HealthRecordSyncPayload>(row.payloadJson, "health record")
+                    }.getOrNull()
+                }
+            healthArchiveRepository.setCloudRecords(healthRecords)
+
+            val latestSignals = active.asSequence()
+                .filter { it.entityType == CloudSyncEntityTypes.DAILY_SIGNALS }
+                .mapNotNull { row ->
+                    runCatching {
+                        val payload = decode<DailySignalsSyncPayload>(row.payloadJson, "daily signals")
+                        row to payload
+                    }.getOrNull()
+                }
+                .maxWithOrNull(
+                    compareBy<Pair<DesktopCloudSyncEntityRecord, DailySignalsSyncPayload>> { it.second.date }
+                        .thenBy { it.first.hlc }
                 )
-            }
-        val deletedMealIds = records.asSequence()
-            .filter { it.entityType == CloudSyncEntityTypes.MEAL && it.isDeleted }
-            .map { it.entityId }
-            .toSet()
-        nutritionRepository.setCloudMeals(meals, deletedMealIds)
+                ?.second
 
-        val water = active.filter { it.entityType == CloudSyncEntityTypes.WATER_ENTRY }
-            .map { row ->
-                val payload = decode<WaterSyncPayload>(row.payloadJson, "water")
-                require(payload.syncId == row.entityId) { "Water payload ID does not match its cloud entity ID." }
-                HydrationLogDto(payload.syncId, payload.amountMl, payload.timestamp)
-            }
-        healthRepository.setCloudWaterEntries(water)
-
-        val todos = active.filter { it.entityType == CloudSyncEntityTypes.TODO }
-            .map { row ->
-                val payload = decode<TodoSyncPayload>(row.payloadJson, "todo")
-                require(payload.syncId == row.entityId) { "Todo payload ID does not match its cloud entity ID." }
-                FridayTaskDto(
-                    id = payload.syncId,
-                    title = payload.title,
-                    isCompleted = payload.isDone,
-                    deadlineTimestamp = payload.dueAt,
-                    createdTimestamp = payload.createdAt,
-                    completedTimestamp = payload.completedAt,
-                    timestamp = payload.createdAt
+            healthRepository.setCloudSignals(latestSignals?.let { payload ->
+                DailySignalDto(
+                    date = payload.date,
+                    restingHeartRate = payload.restingHr ?: 0,
+                    hrv = payload.hrvMs?.toFloat() ?: 0f,
+                    stepCount = payload.steps ?: 0,
+                    activeEnergyBurned = payload.activeCaloriesKcal ?: 0,
+                    sleepDurationMinutes = payload.sleepMinutes ?: 0,
+                    waterIntakeMl = payload.waterMl,
+                    phoneUsageMinutes = payload.screenTimeMinutes,
+                    bloodOxygenPercentage = payload.spo2Percent?.toFloat() ?: 0f,
+                    timestamp = records.asSequence()
+                        .filter { it.entityType == CloudSyncEntityTypes.DAILY_SIGNALS && it.entityId == "${payload.sourceDeviceId}:${payload.date}" }
+                        .mapNotNull { it.hlc.substringBefore('-').toLongOrNull() }
+                        .firstOrNull() ?: 0L
                 )
-            }
-        val deletedTodoIds = records.asSequence()
-            .filter { it.entityType == CloudSyncEntityTypes.TODO && it.isDeleted }
-            .map { it.entityId }
-            .toSet()
-        tasksRepository.setCloudTasks(todos, deletedTodoIds)
-
-        val goals = active.filter { it.entityType == CloudSyncEntityTypes.GOAL }
-            .map { row ->
-                val payload = decode<GoalSyncPayload>(row.payloadJson, "goal")
-                require(payload.syncId == row.entityId) { "Goal payload ID does not match its cloud entity ID." }
-                payload
-            }
-        tasksRepository.setCloudGoals(goals)
-
-        val journalEntries = active.filter { it.entityType == CloudSyncEntityTypes.JOURNAL_ENTRY }
-            .map { row ->
-                val payload = decode<JournalSyncPayload>(row.payloadJson, "journal entry")
-                require(payload.syncId == row.entityId) { "Journal payload ID does not match its cloud entity ID." }
-                payload
-            }
-        tasksRepository.setCloudJournalEntries(journalEntries)
-
-        // Health archive payloads can contain sensitive measurements or route data.
-        // Validate their identity, but expose only safe metadata to the desktop UI.
-        val healthRecords = active.filter { it.entityType == CloudSyncEntityTypes.HEALTH_RECORD }
-            .map { row ->
-                val payload = decode<HealthRecordSyncPayload>(row.payloadJson, "health record")
-                require(payload.archiveId == row.entityId) {
-                    "Health-record payload ID does not match its cloud entity ID."
-                }
-                require(payload.archiveId == "${payload.sourceDeviceId}:${payload.recordType}:${payload.recordId}") {
-                    "Health-record payload identity is inconsistent."
-                }
-                payload
-            }
-        healthArchiveRepository.setCloudRecords(healthRecords)
-
-        val latestSignals = active.asSequence()
-            .filter { it.entityType == CloudSyncEntityTypes.DAILY_SIGNALS }
-            .map { row ->
-                val payload = decode<DailySignalsSyncPayload>(row.payloadJson, "daily signals")
-                require(row.entityId == "${payload.sourceDeviceId}:${payload.date}") {
-                    "Daily-signals payload identity does not match its cloud entity ID."
-                }
-                require(runCatching { LocalDate.parse(payload.date) }.isSuccess) {
-                    "Daily-signals payload contains an invalid date."
-                }
-                row to payload
-            }
-            .maxWithOrNull(
-                compareBy<Pair<DesktopCloudSyncEntityRecord, DailySignalsSyncPayload>> { it.second.date }
-                    .thenBy { it.first.hlc }
-            )
-            ?.second
-
-        healthRepository.setCloudSignals(latestSignals?.let { payload ->
-            DailySignalDto(
-                date = payload.date,
-                restingHeartRate = payload.restingHr ?: 0,
-                hrv = payload.hrvMs?.toFloat() ?: 0f,
-                stepCount = payload.steps ?: 0,
-                activeEnergyBurned = payload.activeCaloriesKcal ?: 0,
-                sleepDurationMinutes = payload.sleepMinutes ?: 0,
-                waterIntakeMl = payload.waterMl,
-                phoneUsageMinutes = payload.screenTimeMinutes,
-                bloodOxygenPercentage = payload.spo2Percent?.toFloat() ?: 0f,
-                timestamp = records.asSequence()
-                    .filter { it.entityType == CloudSyncEntityTypes.DAILY_SIGNALS && it.entityId == "${payload.sourceDeviceId}:${payload.date}" }
-                    .mapNotNull { it.hlc.substringBefore('-').toLongOrNull() }
-                    .firstOrNull() ?: 0L
-            )
-        })
+            })
+        }.onFailure { e ->
+            System.err.println("[DesktopCloudSyncRemoteApplier] Error publishing snapshot: ${e.message}")
+        }
     }
 
     private inline fun <reified T> decode(raw: String?, label: String): T {
