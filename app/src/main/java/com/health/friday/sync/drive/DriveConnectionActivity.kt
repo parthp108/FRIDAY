@@ -228,12 +228,11 @@ class DriveConnectionActivity : ComponentActivity() {
         lifecycleScope.launch {
             try {
                 val container = (application as FridayApplication).container
-                container.driveSyncEngine.saveAccessToken(this@DriveConnectionActivity, token)
                 val message = withContext(Dispatchers.IO) {
                     when (action) {
                         DriveAction.BACKUP_KEY -> {
                             val recovery = requireNotNull(phrase) { "Enter a recovery phrase first." }
-                            val envelope = container.driveSyncEngine.backUpRecoveryKey(token, recovery)
+                            val envelope = container.driveSyncEngine.backUpRecoveryKey(this@DriveConnectionActivity, token, recovery)
                             "RECOVERY KEY BACKED UP\nKey ID: ${envelope.keyId}\n\nThe encrypted recovery envelope is stored in FRIDAY_Vault. This device is ready to sync."
                         }
                         DriveAction.RESTORE_KEY -> {

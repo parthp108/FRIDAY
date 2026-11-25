@@ -279,9 +279,24 @@ class DriveVaultClient {
             val response = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
             if (code !in 200..299) {
                 val message = runCatching {
-                    JSONObject(response).optJSONObject("error")?.optString("message")
+                    JSONObject(response)
+                        .optJSONObject("error")
+                        ?.optString("message")
                 }.getOrNull()?.takeIf { it.isNotBlank() }
-                throw IOException("Google Drive $method failed (HTTP $code): ${message ?: response.take(800)}")
+                    ?: response.take(800)
+
+                when (code) {
+                    HttpURLConnection.HTTP_UNAUTHORIZED -> {
+                        throw DriveAuthException(
+                            message = "Google Drive authorization expired or is invalid: $message"
+                        )
+                    }
+                    else -> {
+                        throw IOException(
+                            "Google Drive $method failed (HTTP $code): $message"
+                        )
+                    }
+                }
             }
             return response
         } finally {
