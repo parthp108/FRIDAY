@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.net.SocketTimeoutException
 
 class DrivePhase1AuthTest {
 
@@ -39,7 +40,20 @@ class DrivePhase1AuthTest {
         val authReq: DriveSyncExecutionResult = DriveSyncExecutionResult.AuthRequired(null)
         assertTrue(authReq is DriveSyncExecutionResult.AuthRequired)
 
-        val failed: DriveSyncExecutionResult = DriveSyncExecutionResult.Failed(IOException("Network error"))
-        assertTrue(failed is DriveSyncExecutionResult.Failed)
+        val transientFail: DriveSyncExecutionResult = DriveSyncExecutionResult.TransientFailure(IOException("Network error"))
+        assertTrue(transientFail is DriveSyncExecutionResult.TransientFailure)
+
+        val permFail: DriveSyncExecutionResult = DriveSyncExecutionResult.PermanentFailure(IllegalStateException("No master key"))
+        assertTrue(permFail is DriveSyncExecutionResult.PermanentFailure)
+    }
+
+    @Test
+    fun testDriveSyncStateEnum() {
+        val states = DriveSyncState.values()
+        assertTrue(states.contains(DriveSyncState.IDLE))
+        assertTrue(states.contains(DriveSyncState.SYNCING))
+        assertTrue(states.contains(DriveSyncState.AUTH_REQUIRED))
+        assertTrue(states.contains(DriveSyncState.SUCCESS))
+        assertTrue(states.contains(DriveSyncState.FAILED))
     }
 }

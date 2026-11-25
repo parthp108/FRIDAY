@@ -30,15 +30,25 @@ class DriveSyncWorker(
             is DriveSyncExecutionResult.Success -> {
                 Result.success()
             }
+
             is DriveSyncExecutionResult.AuthRequired -> {
                 Result.failure()
             }
-            is DriveSyncExecutionResult.Failed -> {
+
+            is DriveSyncExecutionResult.TransientFailure -> {
                 val error = outcome.cause
                 if (error is CancellationException) {
                     throw error
                 }
                 Result.retry()
+            }
+
+            is DriveSyncExecutionResult.PermanentFailure -> {
+                val error = outcome.cause
+                if (error is CancellationException) {
+                    throw error
+                }
+                Result.failure()
             }
         }
     }

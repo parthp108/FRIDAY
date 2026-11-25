@@ -42,6 +42,7 @@ import com.health.friday.domain.SignalsBuilder
 import com.health.friday.loom.LoomDayBuilder
 import com.health.friday.proactive.NudgePolicy
 import com.health.friday.protocols.ProtocolEngine
+import com.health.friday.sync.cloud.DriveSyncStatusRepository
 import com.health.friday.agentic.FocusModeTool
 import com.health.friday.agentic.SystemController
 import com.health.friday.ai.tools.SpotifyAiTool
@@ -121,12 +122,17 @@ class AppContainer(private val context: Context) {
         CloudSyncBackfill(database, cloudSyncWriter)
     }
 
+    val driveSyncStatusRepository by lazy {
+        DriveSyncStatusRepository(context)
+    }
+
     val driveSyncEngine by lazy {
         AndroidDriveSyncEngine(
             cloudSyncStore = cloudSyncStore,
             security = cloudSyncSecurity,
             deviceId = deviceIdentity.deviceId,
-            backfill = cloudSyncBackfill
+            backfill = cloudSyncBackfill,
+            statusRepository = driveSyncStatusRepository
         )
     }
     val healthConnectArchiveSyncer by lazy {

@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,6 +36,7 @@ import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.common.api.Scope
 import com.health.friday.FridayApplication
+import com.health.friday.sync.cloud.DriveSyncState
 import com.health.friday.ui.theme.FRIDAYTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,7 +45,7 @@ import kotlinx.coroutines.withContext
 class DriveConnectionActivity : ComponentActivity() {
     private enum class DriveAction { BACKUP_KEY, RESTORE_KEY, SYNC }
 
-    private var status by mutableStateOf("Encrypted Google Drive backup")
+    private var statusText by mutableStateOf("Encrypted Google Drive backup")
     private var busy by mutableStateOf(false)
     private var pendingAction: DriveAction? = null
     private var pendingPassphrase: CharArray? = null
@@ -54,18 +56,20 @@ class DriveConnectionActivity : ComponentActivity() {
         if (result.resultCode != Activity.RESULT_OK) {
             clearPendingSecrets()
             busy = false
-            status = "Google Drive authorization was cancelled."
+            statusText = "Google Drive authorization was cancelled."
             return@registerForActivityResult
         }
 
         try {
             val authorization = Identity.getAuthorizationClient(this)
                 .getAuthorizationResultFromIntent(result.data)
+            val container = (application as FridayApplication).container
+            container.driveSyncStatusRepository.clearAuthRequired()
             executePendingAction(authorization.accessToken)
         } catch (error: Exception) {
             clearPendingSecrets()
             busy = false
-            status = "Google authorization failed: ${error.message}"
+            statusText = "Google authorization failed: ${error.message}"
         }
     }
 
@@ -74,10 +78,20 @@ class DriveConnectionActivity : ComponentActivity() {
 
         val container = (application as FridayApplication).container
         if (container.cloudSyncSecurity.hasLocalMasterKey()) {
-            status = "STATUS: CONNECTED & ENCRYPTED VAULT READY\n\nYour local master key is active and hardware-protected. Instant background sync is active across reboots and app updates."
+            statusText = "STATUS: CONNECTED & ENCRYPTED VAULT READY\n\nYour local master key is active and hardware-protected. Background sync is active."
         }
 
         setContent {
+            val syncStatus by container.driveSyncStatusRepository.status.collectAsState()
+
+            val displayStatus = when (syncStatus.state) {
+                DriveSyncState.AUTH_REQUIRED -> "RECONNECT REQUIRED: Google Drive access requires your authorization.\n\n${syncStatus.errorMessage.orEmpty()}"
+                DriveSyncState.SYNCING -> "SYNCING: Encrypted data exchange in progress..."
+                DriveSyncState.FAILED -> "SYNC FAILED: ${syncStatus.errorMessage.orEmpty()}"
+                DriveSyncState.SUCCESS -> "SYNC ACTIVE & UP TO DATE\nLast sync: ${if (syncStatus.lastSyncTimeMs > 0) java.util.Date(syncStatus.lastSyncTimeMs).toString() else "Just now"}"
+                DriveSyncState.IDLE -> statusText
+            }
+
             FRIDAYTheme(darkTheme = true, dynamicColor = false) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -100,6 +114,15 @@ class DriveConnectionActivity : ComponentActivity() {
                             "The recovery phrase wraps FRIDAY's random master key. It is not uploaded to Google Drive and FRIDAY does not save it. Use the same phrase on your other devices.",
                             style = MaterialTheme.typography.bodyMedium
                         )
+
+                        if (syncStatus.state == DriveSyncState.AUTH_REQUIRED) {
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !busy,
+                                onClick = { authorizeAndRun(DriveAction.SYNC, null) }
+                            ) { Text("Reconnect Google Drive") }
+                        }
+
                         OutlinedTextField(
                             value = recoveryPhrase,
                             onValueChange = { recoveryPhrase = it },
@@ -147,11 +170,11 @@ class DriveConnectionActivity : ComponentActivity() {
                             onClick = { authorizeAndRun(DriveAction.SYNC, null) }
                         ) { Text("Sync now") }
 
-                        if (busy) CircularProgressIndicator()
+                        if (busy || syncStatus.state == DriveSyncState.SYNCING) CircularProgressIndicator()
 
                         SelectionContainer {
                             Text(
-                                text = status,
+                                text = displayStatus,
                                 fontSize = 13.sp,
                                 lineHeight = 19.sp
                             )
@@ -176,7 +199,7 @@ class DriveConnectionActivity : ComponentActivity() {
         pendingAction = action
         pendingPassphrase = phrase?.toCharArray()
         busy = true
-        status = "Requesting Google Drive access..."
+        statusText = "Requesting Google Drive access..."
 
         val request = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_FILE_SCOPE)))
@@ -190,7 +213,7 @@ class DriveConnectionActivity : ComponentActivity() {
                     if (pendingIntent == null) {
                         clearPendingSecrets()
                         busy = false
-                        status = "Google authorization returned no resolution intent."
+                        statusText = "Google authorization returned no resolution intent."
                     } else {
                         authorizationLauncher.launch(
                             IntentSenderRequest.Builder(pendingIntent.intentSender).build()
@@ -203,7 +226,7 @@ class DriveConnectionActivity : ComponentActivity() {
             .addOnFailureListener { error ->
                 clearPendingSecrets()
                 busy = false
-                status = "Google Drive authorization failed: ${error.message}"
+                statusText = "Google Drive authorization failed: ${error.message}"
             }
     }
 
@@ -212,7 +235,7 @@ class DriveConnectionActivity : ComponentActivity() {
         if (token == null) {
             clearPendingSecrets()
             busy = false
-            status = "Google did not return an access token."
+            statusText = "Google did not return an access token."
             return
         }
 
@@ -221,7 +244,7 @@ class DriveConnectionActivity : ComponentActivity() {
         if (action == null) {
             clearPendingSecrets()
             busy = false
-            status = "No Drive operation was selected."
+            statusText = "No Drive operation was selected."
             return
         }
 
@@ -232,7 +255,7 @@ class DriveConnectionActivity : ComponentActivity() {
                     when (action) {
                         DriveAction.BACKUP_KEY -> {
                             val recovery = requireNotNull(phrase) { "Enter a recovery phrase first." }
-                            val envelope = container.driveSyncEngine.backUpRecoveryKey(this@DriveConnectionActivity, token, recovery)
+                            val envelope = container.driveSyncEngine.backUpRecoveryKey(token, recovery)
                             "RECOVERY KEY BACKED UP\nKey ID: ${envelope.keyId}\n\nThe encrypted recovery envelope is stored in FRIDAY_Vault. This device is ready to sync."
                         }
                         DriveAction.RESTORE_KEY -> {
@@ -242,13 +265,18 @@ class DriveConnectionActivity : ComponentActivity() {
                         }
                         DriveAction.SYNC -> {
                             val result = container.driveSyncEngine.performSync(token)
+                            container.driveSyncStatusRepository.updateStatus(com.health.friday.sync.cloud.DriveSyncState.SUCCESS)
                             "SYNC COMPLETED\nPreviously existing records queued: ${result.backfilledRecords}\nUploaded batches: ${result.uploadedBatches}\nUploaded operations: ${result.uploadedOperations}\nDownloaded batches: ${result.downloadedBatches}\nApplied operations: ${result.appliedOperations}"
                         }
                     }
                 }
-                status = message
+                statusText = message
             } catch (error: Exception) {
-                status = "DRIVE OPERATION FAILED\n${error.message ?: error.javaClass.simpleName}"
+                statusText = "DRIVE OPERATION FAILED\n${error.message ?: error.javaClass.simpleName}"
+                (application as FridayApplication).container.driveSyncStatusRepository.updateStatus(
+                    com.health.friday.sync.cloud.DriveSyncState.FAILED,
+                    error.message ?: error.javaClass.simpleName
+                )
             } finally {
                 phrase?.fill('\u0000')
                 pendingPassphrase = null

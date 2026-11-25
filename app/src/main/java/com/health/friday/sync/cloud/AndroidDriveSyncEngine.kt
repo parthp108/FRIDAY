@@ -5,6 +5,8 @@ import android.content.Context
 import com.google.android.gms.auth.api.identity.AuthorizationRequest
 import com.google.android.gms.auth.api.identity.AuthorizationResult
 import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.tasks.Task
 import com.health.friday.shared.sync.cloud.CloudSyncKeyEnvelope
@@ -21,6 +23,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.IOException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import kotlin.coroutines.resume
 
 data class DriveSyncResult(
@@ -52,7 +57,11 @@ sealed interface DriveSyncExecutionResult {
         val pendingIntent: PendingIntent? = null
     ) : DriveSyncExecutionResult
 
-    data class Failed(
+    data class TransientFailure(
+        val cause: Throwable
+    ) : DriveSyncExecutionResult
+
+    data class PermanentFailure(
         val cause: Throwable
     ) : DriveSyncExecutionResult
 }
@@ -128,7 +137,8 @@ class AndroidDriveSyncEngine(
     private val security: AndroidCloudSyncSecurity,
     private val deviceId: String,
     private val backfill: CloudSyncBackfill,
-    private val drive: DriveVaultClient = DriveVaultClient()
+    private val drive: DriveVaultClient = DriveVaultClient(),
+    val statusRepository: DriveSyncStatusRepository? = null
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -139,6 +149,30 @@ class AndroidDriveSyncEngine(
     @Volatile
     private var isSyncing = false
 
+    fun classifyFailure(cause: Throwable): DriveSyncExecutionResult {
+        if (cause is DriveAuthException) {
+            return DriveSyncExecutionResult.AuthRequired()
+        }
+        if (cause is DriveAuthorizationRequiredException) {
+            return DriveSyncExecutionResult.AuthRequired(cause.pendingIntent)
+        }
+        if (cause is CancellationException) {
+            throw cause
+        }
+        if (cause is IOException ||
+            cause is SocketTimeoutException ||
+            cause is UnknownHostException ||
+            (cause is ApiException && (
+                cause.statusCode == CommonStatusCodes.NETWORK_ERROR ||
+                cause.statusCode == CommonStatusCodes.TIMEOUT ||
+                cause.statusCode == CommonStatusCodes.INTERNAL_ERROR
+            ))
+        ) {
+            return DriveSyncExecutionResult.TransientFailure(cause)
+        }
+        return DriveSyncExecutionResult.PermanentFailure(cause)
+    }
+
     fun triggerInstantSync(context: Context) {
         if (!security.hasLocalMasterKey()) return
         val appContext = context.applicationContext
@@ -146,18 +180,11 @@ class AndroidDriveSyncEngine(
             if (isSyncing) return@launch
             isSyncing = true
             try {
-                when (val outcome = performAuthorizedSync(appContext)) {
-                    is DriveSyncExecutionResult.Success -> {
-                        // Sync finished successfully
-                    }
-                    is DriveSyncExecutionResult.AuthRequired -> {
-                        System.err.println("[AndroidDriveSyncEngine] Instant sync requires user authorization.")
-                    }
-                    is DriveSyncExecutionResult.Failed -> {
-                        System.err.println("[AndroidDriveSyncEngine] Instant sync failed: ${outcome.cause.message}")
-                    }
-                }
-            } catch (_: Exception) {
+                performAuthorizedSync(appContext)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                statusRepository?.updateStatus(DriveSyncState.FAILED, e.message ?: e.javaClass.simpleName)
             } finally {
                 isSyncing = false
             }
@@ -168,59 +195,87 @@ class AndroidDriveSyncEngine(
         context: Context
     ): DriveSyncExecutionResult {
         if (!security.hasLocalMasterKey()) {
-            return DriveSyncExecutionResult.Failed(
-                IllegalStateException("FRIDAY cloud key is not initialized.")
-            )
+            val cause = IllegalStateException("FRIDAY cloud key is not initialized.")
+            statusRepository?.updateStatus(DriveSyncState.FAILED, cause.message)
+            return DriveSyncExecutionResult.PermanentFailure(cause)
         }
 
         val appContext = context.applicationContext
+        statusRepository?.updateStatus(DriveSyncState.SYNCING)
+
         val firstAuthorization = obtainDriveAuthorization(appContext)
 
         var token = when (firstAuthorization) {
             is DriveAuthorizationResult.Authorized ->
                 firstAuthorization.accessToken
 
-            is DriveAuthorizationResult.UserActionRequired ->
-                return DriveSyncExecutionResult.AuthRequired(
-                    firstAuthorization.pendingIntent
+            is DriveAuthorizationResult.UserActionRequired -> {
+                statusRepository?.updateStatus(
+                    DriveSyncState.AUTH_REQUIRED,
+                    "Google Drive authorization required."
                 )
+                return DriveSyncExecutionResult.AuthRequired(firstAuthorization.pendingIntent)
+            }
 
-            is DriveAuthorizationResult.Unavailable ->
-                return DriveSyncExecutionResult.Failed(firstAuthorization.cause)
+            is DriveAuthorizationResult.Unavailable -> {
+                val failure = classifyFailure(firstAuthorization.cause)
+                statusRepository?.updateStatus(DriveSyncState.FAILED, firstAuthorization.cause.message)
+                return failure
+            }
         }
 
         return try {
             try {
-                DriveSyncExecutionResult.Success(performSync(token))
+                val result = performSync(token)
+                statusRepository?.updateStatus(DriveSyncState.SUCCESS)
+                DriveSyncExecutionResult.Success(result)
             } catch (e: DriveAuthException) {
                 // A token can expire during a long sync. Obtain a fresh one
                 // and retry the sync once, not indefinitely.
                 when (val refreshed = obtainDriveAuthorization(appContext)) {
                     is DriveAuthorizationResult.Authorized -> {
                         token = refreshed.accessToken
-                        DriveSyncExecutionResult.Success(performSync(token))
+                        val result = performSync(token)
+                        statusRepository?.updateStatus(DriveSyncState.SUCCESS)
+                        DriveSyncExecutionResult.Success(result)
                     }
 
-                    is DriveAuthorizationResult.UserActionRequired ->
-                        DriveSyncExecutionResult.AuthRequired(
-                            refreshed.pendingIntent
+                    is DriveAuthorizationResult.UserActionRequired -> {
+                        statusRepository?.updateStatus(
+                            DriveSyncState.AUTH_REQUIRED,
+                            "Google Drive authorization required."
                         )
+                        DriveSyncExecutionResult.AuthRequired(refreshed.pendingIntent)
+                    }
 
-                    is DriveAuthorizationResult.Unavailable ->
-                        DriveSyncExecutionResult.Failed(refreshed.cause)
+                    is DriveAuthorizationResult.Unavailable -> {
+                        val failure = classifyFailure(refreshed.cause)
+                        statusRepository?.updateStatus(DriveSyncState.FAILED, refreshed.cause.message)
+                        failure
+                    }
                 }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: DriveAuthException) {
+            statusRepository?.updateStatus(
+                DriveSyncState.AUTH_REQUIRED,
+                "Google Drive authorization required."
+            )
             DriveSyncExecutionResult.AuthRequired()
         } catch (e: Exception) {
-            DriveSyncExecutionResult.Failed(e)
+            val failure = classifyFailure(e)
+            val msg = e.message ?: e.javaClass.simpleName
+            if (failure is DriveSyncExecutionResult.AuthRequired) {
+                statusRepository?.updateStatus(DriveSyncState.AUTH_REQUIRED, msg)
+            } else {
+                statusRepository?.updateStatus(DriveSyncState.FAILED, msg)
+            }
+            failure
         }
     }
 
     suspend fun backUpRecoveryKey(
-        context: Context,
         accessToken: String,
         passphrase: CharArray
     ): CloudSyncKeyEnvelope = withContext(Dispatchers.IO) {
