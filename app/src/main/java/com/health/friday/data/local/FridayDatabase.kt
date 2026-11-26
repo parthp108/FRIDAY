@@ -329,6 +329,19 @@ private val MIGRATION_20_21 = object : Migration(20, 21) {
     }
 }
 
+private val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_sync_backfill_state (
+                stage TEXT NOT NULL PRIMARY KEY,
+                completedAtMs INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+    }
+}
+
 @Database(
     entities = [
         Meal::class, WaterEntry::class, Reminder::class, Alarm::class,
@@ -338,9 +351,9 @@ private val MIGRATION_20_21 = object : Migration(20, 21) {
         MemoryFactEntity::class, CloudSyncOutboxEntity::class, CloudSyncInboxEntity::class,
         CloudSyncCursorEntity::class, CloudSyncClockEntity::class,
         HealthRecordArchiveEntity::class, HealthConnectSyncStateEntity::class,
-        CloudSyncEntityStateEntity::class
+        CloudSyncEntityStateEntity::class, CloudSyncBackfillStateEntity::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = false
 )
 abstract class FridayDatabase : RoomDatabase() {
@@ -384,7 +397,8 @@ abstract class FridayDatabase : RoomDatabase() {
                         MIGRATION_17_18,
                         MIGRATION_18_19,
                         MIGRATION_19_20,
-                        MIGRATION_20_21
+                        MIGRATION_20_21,
+                        MIGRATION_21_22
                     )
                     .fallbackToDestructiveMigration(true)
                     .build()

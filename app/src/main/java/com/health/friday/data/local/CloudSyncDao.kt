@@ -125,4 +125,22 @@ interface CloudSyncDao {
         """
     )
     suspend fun deleteOldInboxEntries(olderThanMs: Long): Int
+
+    // ---------------- LEGACY BACKFILL PROGRESS ----------------
+
+    @Query(
+        """
+        SELECT EXISTS(
+            SELECT 1
+            FROM cloud_sync_backfill_state
+            WHERE stage = :stage
+        )
+        """
+    )
+    suspend fun isBackfillStageComplete(stage: String): Boolean
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveBackfillStage(
+        state: CloudSyncBackfillStateEntity
+    )
 }

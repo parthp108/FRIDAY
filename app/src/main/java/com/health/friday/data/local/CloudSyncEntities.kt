@@ -60,3 +60,11 @@ data class CloudSyncClockEntity(
     val lastWallMs: Long,
     val lastCounter: Int
 )
+
+@Entity(tableName = "cloud_sync_backfill_state")
+data class CloudSyncBackfillStateEntity(
+    @PrimaryKey
+    val stage: String,
+
+    val completedAtMs: Long
+)

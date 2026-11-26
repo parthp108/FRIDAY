@@ -1,5 +1,6 @@
 package com.health.friday.sync.cloud
 
+import com.health.friday.data.local.CloudSyncBackfillStateEntity
 import com.health.friday.data.local.FridayDatabase
 import com.health.friday.device.toCloudSyncPayload
 import com.health.friday.shared.sync.cloud.CloudSyncEntityTypes
@@ -14,13 +15,33 @@ class CloudSyncBackfill(
     private val writer: AndroidCloudSyncWriter
 ) {
     suspend fun run(): CloudSyncBackfillReport {
-        val mealCount = enqueueMeals()
-        val waterCount = enqueueWater()
-        val todoCount = enqueueTodos()
-        val goalCount = enqueueGoals()
-        val journalCount = enqueueJournal()
-        val dailySignalCount = enqueueDailySignals()
-        val healthRecordCount = enqueueHealthRecords()
+        val mealCount = runStage(STAGE_MEALS) {
+            enqueueMeals()
+        }
+
+        val waterCount = runStage(STAGE_WATER) {
+            enqueueWater()
+        }
+
+        val todoCount = runStage(STAGE_TODOS) {
+            enqueueTodos()
+        }
+
+        val goalCount = runStage(STAGE_GOALS) {
+            enqueueGoals()
+        }
+
+        val journalCount = runStage(STAGE_JOURNAL) {
+            enqueueJournal()
+        }
+
+        val dailySignalCount = runStage(STAGE_DAILY_SIGNALS) {
+            enqueueDailySignals()
+        }
+
+        val healthRecordCount = runStage(STAGE_HEALTH_RECORDS) {
+            enqueueHealthRecords()
+        }
 
         return CloudSyncBackfillReport(
             meals = mealCount,
@@ -31,6 +52,29 @@ class CloudSyncBackfill(
             dailySignals = dailySignalCount,
             healthRecords = healthRecordCount
         )
+    }
+
+    private suspend fun runStage(
+        stage: String,
+        action: suspend () -> Int
+    ): Int {
+        val dao = database.cloudSyncDao()
+
+        if (dao.isBackfillStageComplete(stage)) {
+            return 0
+        }
+
+        // Only mark a stage complete after every batch succeeds.
+        val processedCount = action()
+
+        dao.saveBackfillStage(
+            CloudSyncBackfillStateEntity(
+                stage = stage,
+                completedAtMs = System.currentTimeMillis()
+            )
+        )
+
+        return processedCount
     }
 
     private suspend fun enqueueMeals(): Int {
@@ -208,6 +252,14 @@ class CloudSyncBackfill(
 
     private companion object {
         const val BATCH_SIZE = 100
+
+        const val STAGE_MEALS = "meals_v1"
+        const val STAGE_WATER = "water_v1"
+        const val STAGE_TODOS = "todos_v1"
+        const val STAGE_GOALS = "goals_v1"
+        const val STAGE_JOURNAL = "journal_v1"
+        const val STAGE_DAILY_SIGNALS = "daily_signals_v1"
+        const val STAGE_HEALTH_RECORDS = "health_records_v1"
     }
 }
 
