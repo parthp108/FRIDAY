@@ -52,28 +52,6 @@ fun DesktopSettingsScreen(
     var actionStatus by remember { mutableStateOf<String?>(null) }
     var passphraseInput by remember { mutableStateOf("") }
     var confirmPassphraseInput by remember { mutableStateOf("") }
-    var showFilePicker by remember { mutableStateOf(false) }
-
-    if (showFilePicker) {
-        LaunchedEffect(Unit) {
-            val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select Google OAuth credentials JSON", java.awt.FileDialog.LOAD).apply {
-                file = "*.json"
-                isVisible = true
-            }
-            val file = dialog.file?.let { java.io.File(dialog.directory, it) }
-            showFilePicker = false
-            if (file != null) {
-                syncRunning = true
-                actionStatus = "Opening browser for Google authorization..."
-                val result = runCatching { withContext(Dispatchers.IO) { onDriveConnect(file) } }
-                actionStatus = result.fold(
-                    onSuccess = { it },
-                    onFailure = { "CONNECT FAILED: ${it.message ?: it}" }
-                )
-                syncRunning = false
-            }
-        }
-    }
 
     val displayStatus = when {
         syncRunning || driveSyncStatus.state == DesktopSyncState.SYNCING -> "SYNCING: Encrypted data exchange in progress..."
@@ -112,7 +90,35 @@ fun DesktopSettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             enabled = !syncRunning,
-                            onClick = { showFilePicker = true },
+                            onClick = {
+                                syncRunning = true
+                                actionStatus = "Opening file picker..."
+                                scope.launch(Dispatchers.IO) {
+                                    try {
+                                        val dialog = java.awt.FileDialog(
+                                            null as java.awt.Frame?,
+                                            "Select Google OAuth credentials JSON",
+                                            java.awt.FileDialog.LOAD
+                                        ).apply {
+                                            file = "*.json"
+                                            isVisible = true
+                                        }
+                                        val file = dialog.file?.let { java.io.File(dialog.directory, it) }
+                                        if (file != null) {
+                                            actionStatus = "Opening browser for Google authorization..."
+                                            val msg = onDriveConnect(file)
+                                            actionStatus = msg
+                                        } else {
+                                            actionStatus = null
+                                        }
+                                    } catch (e: Exception) {
+                                        if (e is kotlinx.coroutines.CancellationException) throw e
+                                        actionStatus = "CONNECT FAILED: ${e.message ?: e.javaClass.simpleName}"
+                                    } finally {
+                                        syncRunning = false
+                                    }
+                                }
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
                         ) {
                             Text(if (isDriveConnected) "Reconnect Google Drive" else "1. Connect Google Drive")
