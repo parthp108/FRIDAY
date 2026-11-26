@@ -218,12 +218,8 @@ fun DesktopHealthScreen(
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Health Connect & Telemetry Bridge", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         Text(
-                            "Daily summary values are mirrored over USB. Detailed Health Connect records are transferred through encrypted Google Drive sync.",
+                            "Health Connect records and telemetry are synced securely through your encrypted Google Drive Vault.",
                             color = Color(0xFFCBD5E1), fontSize = 13.sp
-                        )
-                        Text(
-                            if (isPhoneConnected) "Phone link: connected (USB, live)" else "Phone link: offline",
-                            color = Color(0xFF94A3B8), fontSize = 12.sp
                         )
                     }
                 }

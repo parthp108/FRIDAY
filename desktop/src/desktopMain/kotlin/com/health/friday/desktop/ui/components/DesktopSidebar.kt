@@ -34,7 +34,7 @@ enum class DesktopNavTab(val title: String, val icon: ImageVector) {
 @Composable
 fun DesktopSidebar(
     selectedTab: DesktopNavTab,
-    isPhoneConnected: Boolean,
+    isPhoneConnected: Boolean = false,
     onTabSelected: (DesktopNavTab) -> Unit
 ) {
     Column(
@@ -109,39 +109,6 @@ fun DesktopSidebar(
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                     )
                 }
-            }
-        }
-
-        // Footer Connection Status
-        Surface(
-            color = Color(0xFF0B0F19),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().clickable { onTabSelected(DesktopNavTab.DIAGNOSTICS) }
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .background(
-                                color = if (isPhoneConnected) Color(0xFF00E5FF) else Color(0xFFFF3B30),
-                                shape = CircleShape
-                            )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = if (isPhoneConnected) "Phone USB Live" else "Phone Offline",
-                        color = if (isPhoneConnected) Color(0xFF00E5FF) else Color(0xFFFF3B30),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "USB bridge (read-only)",
-                    color = Color(0xFF64748B),
-                    fontSize = 10.sp
-                )
             }
         }
     }

@@ -320,7 +320,7 @@ fun DesktopSettingsScreen(
             Surface(color = Color(0xFF1E293B), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("⏰ Scheduled Alarms & Phone Telemetry Sync", color = Color(0xFF38BDF8), fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text("Phone data is mirrored to this PC over USB when you connect. It is read-only for now.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    Text("Data is synced across devices via encrypted Google Drive Vault.", color = Color(0xFF94A3B8), fontSize = 12.sp)
                 }
             }
         }

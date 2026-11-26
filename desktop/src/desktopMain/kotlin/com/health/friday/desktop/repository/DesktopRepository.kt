@@ -73,7 +73,6 @@ object DesktopChatStorage {
 
 class DesktopRepository(
     val orchestrator: SharedAiOrchestrator,
-    val syncClient: DesktopSyncClient = DesktopSyncClient(),
     private val ollamaClient: LocalOllamaClient = LocalOllamaClient(),
     private val aiClient: DesktopAiClient = DesktopAiClient(orchestrator, ollamaClient)
 ) {
@@ -112,7 +111,7 @@ class DesktopRepository(
 
     private val defaultWelcomeMsg = ChatMessageDto(
         "1", ChatRole.ASSISTANT,
-        "F.R.I.D.A.Y. Desktop online. Connect your phone by USB (USB debugging on) to see its data.",
+        "F.R.I.D.A.Y. Desktop online.",
         System.currentTimeMillis()
     )
 
@@ -202,31 +201,11 @@ class DesktopRepository(
     val apiKey = MutableStateFlow("")
     val personaStyle = MutableStateFlow("Clean Assistant")
     val localModelName = MutableStateFlow("llama3.2:1b")
-    val isPhoneConnected: StateFlow<Boolean> = syncClient.isConnected
-    val ktorServer = DesktopKtorServer(8089)
-    val phoneName: StateFlow<String?> = syncClient.peerName
+    val isPhoneConnected: StateFlow<Boolean> = MutableStateFlow(false)
+    val phoneName: StateFlow<String?> = MutableStateFlow(null)
 
     fun initSync() {
         cloudSyncRuntime.startBackgroundSync(scope)
-
-        syncClient.connect(
-            onMealsReceived = { nutritionRepo.setMeals(it) },
-            onTasksReceived = { tasksRepo.setTasks(it) },
-            onRemindersReceived = { tasksRepo.setReminders(it) },
-            onSignalReceived = { healthRepo.setSignals(it) },
-            onRejected = { notice.value = it }
-        )
-
-        // Start Ktor WebSocket Server for wireless Wi-Fi and cloud client connections
-        ktorServer.start { envelope ->
-            when (val p = envelope.payload) {
-                is MealsSnapshot -> nutritionRepo.setMeals(p.meals)
-                is TasksSnapshot -> tasksRepo.setTasks(p.tasks)
-                is RemindersSnapshot -> tasksRepo.setReminders(p.reminders)
-                is SignalsSnapshot -> healthRepo.setSignals(p.signals)
-                else -> Unit
-            }
-        }
     }
 
     private fun requiresWebSearch(text: String): Boolean {
@@ -410,7 +389,7 @@ class DesktopRepository(
         val pending = tasks.value.count { !it.isCompleted }
         return """
             STATUS
-            • Phone link: ${if (isPhoneConnected.value) "connected (USB, read-only)" else "offline"}
+            • Encrypted Cloud Vault: Ready
             • Calories today: $kcal kcal
             • Water today: ${dailySignals.value.waterIntakeMl?.let { "$it ml" } ?: "unknown"}
             • Pending tasks: $pending
@@ -591,6 +570,5 @@ class DesktopRepository(
         kotlinx.coroutines.runBlocking { cloudSyncRuntime.syncEngine.performSync() }
 
     fun disconnect() {
-        syncClient.disconnect()
     }
 }

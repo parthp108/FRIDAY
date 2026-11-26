@@ -13,9 +13,7 @@ class FridayApplication : Application() {
         instance = this
         container = AppContainer(this)
 
-        if (BuildConfig.DEBUG) {
-            container.syncServer.startServer()
-        }
+
     }
 
     override fun onTrimMemory(level: Int) {

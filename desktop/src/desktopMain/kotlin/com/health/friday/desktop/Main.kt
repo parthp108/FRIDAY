@@ -110,7 +110,7 @@ fun main() {
                         windowState.isMinimized = true
                     }
                 },
-                title = "F.R.I.D.A.Y. Desktop (USB Live)",
+                title = "F.R.I.D.A.Y. Desktop",
                 icon = appIcon,
                 state = windowState,
                 alwaysOnTop = isHudOverlayMode
