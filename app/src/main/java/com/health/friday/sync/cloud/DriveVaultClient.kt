@@ -242,6 +242,22 @@ class DriveVaultClient {
         DriveChangesResult(newFiles = uniqueFiles, newPageToken = finalToken)
     }
 
+
+    suspend fun deleteFile(accessToken: String, fileId: String) = withContext(Dispatchers.IO) {
+        require(fileId.isNotBlank())
+        val url = "$DRIVE_API/files/${encodePathSegment(fileId)}"
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "DELETE"
+        conn.setRequestProperty("Authorization", "Bearer $accessToken")
+        conn.connectTimeout = CONNECT_TIMEOUT_MS
+        conn.readTimeout    = READ_TIMEOUT_MS
+        val code = conn.responseCode
+        conn.disconnect()
+        if (code != 204 && code != 200) {
+            throw DriveHttpException(code, "DELETE $fileId returned HTTP $code")
+        }
+    }
+
     private fun listAllFiles(accessToken: String, query: String): List<DriveVaultFile> {
         val result = mutableListOf<DriveVaultFile>()
         var pageToken: String? = null

@@ -706,6 +706,25 @@ class AndroidDriveSyncEngine(
         return downloaded to applied
     }
 
+
+    /**
+     * Deletes all FRIDAY_Vault batch files from Google Drive, then wipes the
+     * local master key. Called by the UI's "Delete everything" option.
+     * Best-effort: local key is wiped even if the Drive deletion partially fails.
+     */
+    suspend fun deleteVaultAndLocalKey(accessToken: String) = withContext(Dispatchers.IO) {
+        require(accessToken.isNotBlank())
+        try {
+            val folderId = drive.ensureVaultFolder(accessToken)
+            val files = drive.listBatchFiles(accessToken, folderId)
+            for (file in files) {
+                runCatching { drive.deleteFile(accessToken, file.id) }
+            }
+        } finally {
+            security.deleteLocalKey()
+        }
+    }
+
     companion object {
         private const val UPLOAD_CONCURRENCY = 3
         private const val MAX_OPERATIONS_PER_BATCH = 200

@@ -340,7 +340,7 @@
         <activity
             android:name=".sync.drive.DriveConnectionActivity"
             android:exported="false"
-            android:label="Google Drive Test" />
+            android:label="Drive Sync" />
 
         <activity
             android:name=".StartupActivity"
