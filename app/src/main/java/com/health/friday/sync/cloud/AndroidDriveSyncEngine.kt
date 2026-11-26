@@ -23,6 +23,9 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import com.health.friday.shared.sync.cloud.DebouncedSyncTrigger
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -146,8 +149,27 @@ class AndroidDriveSyncEngine(
     }
 
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val syncMutex = Mutex()
+
     @Volatile
-    private var isSyncing = false
+    private var latestSyncContext: Context? = null
+
+    private val instantSyncTrigger = DebouncedSyncTrigger(
+        scope = syncScope,
+        onFailure = { error ->
+            statusRepository?.updateStatus(
+                DriveSyncState.FAILED,
+                error.message ?: error.javaClass.simpleName
+            )
+        },
+        action = {
+            val context = latestSyncContext
+
+            if (context != null && security.hasLocalMasterKey()) {
+                performAuthorizedSync(context)
+            }
+        }
+    )
 
     fun classifyFailure(cause: Throwable): DriveSyncExecutionResult {
         if (cause is DriveAuthException) {
@@ -188,35 +210,18 @@ class AndroidDriveSyncEngine(
     fun triggerInstantSync(context: Context) {
         if (!security.hasLocalMasterKey()) return
 
-        val appContext = context.applicationContext
-        syncScope.launch {
-            if (isSyncing) return@launch
-
-            isSyncing = true
-            try {
-                when (val outcome = performAuthorizedSync(appContext)) {
-                    is DriveSyncExecutionResult.Success,
-                    is DriveSyncExecutionResult.AuthRequired,
-                    is DriveSyncExecutionResult.TransientFailure,
-                    is DriveSyncExecutionResult.PermanentFailure -> {
-                        // performAuthorizedSync() owns status transitions.
-                        // Background retry scheduling is handled separately.
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                statusRepository?.updateStatus(
-                    DriveSyncState.FAILED,
-                    e.message ?: e.javaClass.simpleName
-                )
-            } finally {
-                isSyncing = false
-            }
-        }
+        latestSyncContext = context.applicationContext
+        instantSyncTrigger.request()
     }
 
     suspend fun performAuthorizedSync(
+        context: Context
+    ): DriveSyncExecutionResult =
+        syncMutex.withLock {
+            performAuthorizedSyncLocked(context)
+        }
+
+    private suspend fun performAuthorizedSyncLocked(
         context: Context
     ): DriveSyncExecutionResult {
         if (!security.hasLocalMasterKey()) {
@@ -261,6 +266,17 @@ class AndroidDriveSyncEngine(
      * then calls this method. A 401 triggers one further authorization attempt.
      */
     suspend fun performSyncWithAccessToken(
+        context: Context,
+        accessToken: String
+    ): DriveSyncExecutionResult =
+        syncMutex.withLock {
+            performSyncWithAccessTokenLocked(
+                context = context,
+                accessToken = accessToken
+            )
+        }
+
+    private suspend fun performSyncWithAccessTokenLocked(
         context: Context,
         accessToken: String
     ): DriveSyncExecutionResult {

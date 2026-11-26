@@ -9,6 +9,8 @@ import com.health.friday.shared.sync.cloud.SyncOperation
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
 
 data class DesktopDriveSyncResult(
@@ -33,7 +35,14 @@ class DesktopDriveSyncEngine internal constructor(
         encodeDefaults = true
     }
 
-    suspend fun performSync(): DesktopDriveSyncResult {
+    private val syncMutex = Mutex()
+
+    suspend fun performSync(): DesktopDriveSyncResult =
+        syncMutex.withLock {
+            performSyncLocked()
+        }
+
+    private suspend fun performSyncLocked(): DesktopDriveSyncResult {
         require(deviceId.isNotBlank())
         val masterKey = keyVault.load()
             ?: error("FRIDAY desktop cloud key is not initialized. Restore the recovery key first.")
