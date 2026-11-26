@@ -147,6 +147,6 @@ class DesktopCloudSyncService internal constructor(
     }
 
     private companion object {
-        const val MIN_PASSPHRASE_LENGTH = 16
+        const val MIN_PASSPHRASE_LENGTH = 8
     }
 }

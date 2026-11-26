@@ -271,6 +271,6 @@ class DesktopCloudSyncSecurity {
         private const val SALT_BYTES = 16
         private const val GCM_IV_BYTES = 12
         private const val GCM_TAG_BITS = 128
-        private const val MIN_PASSPHRASE_LENGTH = 16
+        private const val MIN_PASSPHRASE_LENGTH = 8
     }
 }
