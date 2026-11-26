@@ -1,5 +1,6 @@
 package com.health.friday.sync.drive
 
+import android.accounts.AccountManager
 import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -18,11 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SwitchAccount
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -78,25 +76,28 @@ private sealed interface DriveScreen {
 
 class DriveConnectionActivity : ComponentActivity() {
 
+    private var pendingAuthCallback: ((email: String?, token: String?) -> Unit)? = null
+
     private val authorizationLauncher = registerForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
+        val callback = pendingAuthCallback
+        pendingAuthCallback = null
+
         if (result.resultCode != Activity.RESULT_OK) {
-            pendingTokenCallback?.invoke(null)
-            pendingTokenCallback = null
+            callback?.invoke(null, null)
             return@registerForActivityResult
         }
         try {
             val authorization = Identity.getAuthorizationClient(this)
                 .getAuthorizationResultFromIntent(result.data)
-            pendingTokenCallback?.invoke(authorization.accessToken)
+            val accounts = AccountManager.get(this).getAccountsByType("com.google")
+            val email = accounts.firstOrNull()?.name ?: "Google Account Connected"
+            callback?.invoke(email, authorization.accessToken)
         } catch (e: Exception) {
-            pendingTokenCallback?.invoke(null)
+            callback?.invoke(null, null)
         }
-        pendingTokenCallback = null
     }
-
-    private var pendingTokenCallback: ((String?) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,12 +143,13 @@ class DriveConnectionActivity : ComponentActivity() {
                                     onSwitchToRestore = { screen = DriveScreen.RestoreKey },
                                     onBack   = { finish() },
                                     onSubmit = { passphrase ->
-                                        screen = DriveScreen.Loading("Opening Google sign-in...")
-                                        authorizeGoogle { token ->
+                                        screen = DriveScreen.Loading("Opening Google Account Chooser...")
+                                        authorizeGoogle { email, token ->
                                             if (token == null) {
-                                                screen = DriveScreen.Error("Google authorization cancelled or failed.")
+                                                screen = DriveScreen.Error("Google account selection was cancelled or failed.")
                                                 return@authorizeGoogle
                                             }
+                                            val accountEmail = email ?: "Google Account Connected"
                                             screen = DriveScreen.Loading("Creating key & backing up to Drive...")
                                             lifecycleScope.launch {
                                                 try {
@@ -156,9 +158,9 @@ class DriveConnectionActivity : ComponentActivity() {
                                                     }
                                                     container.driveSyncStatusRepository.updateStatus(
                                                         state = DriveSyncState.SUCCESS,
-                                                        accountEmail = "Google Account Connected"
+                                                        accountEmail = accountEmail
                                                     )
-                                                    screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
+                                                    screen = DriveScreen.Ready(accountEmail, System.currentTimeMillis())
                                                 } catch (e: Exception) {
                                                     screen = DriveScreen.Error(e.message ?: "Key creation failed.")
                                                 } finally {
@@ -178,12 +180,13 @@ class DriveConnectionActivity : ComponentActivity() {
                                     onSwitchToRestore = null,
                                     onBack   = { screen = DriveScreen.CreateKey },
                                     onSubmit = { passphrase ->
-                                        screen = DriveScreen.Loading("Opening Google sign-in...")
-                                        authorizeGoogle { token ->
+                                        screen = DriveScreen.Loading("Opening Google Account Chooser...")
+                                        authorizeGoogle { email, token ->
                                             if (token == null) {
-                                                screen = DriveScreen.Error("Google authorization cancelled or failed.")
+                                                screen = DriveScreen.Error("Google account selection was cancelled or failed.")
                                                 return@authorizeGoogle
                                             }
+                                            val accountEmail = email ?: "Google Account Connected"
                                             screen = DriveScreen.Loading("Restoring key from Drive...")
                                             lifecycleScope.launch {
                                                 try {
@@ -192,9 +195,9 @@ class DriveConnectionActivity : ComponentActivity() {
                                                     }
                                                     container.driveSyncStatusRepository.updateStatus(
                                                         state = DriveSyncState.SUCCESS,
-                                                        accountEmail = "Google Account Connected"
+                                                        accountEmail = accountEmail
                                                     )
-                                                    screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
+                                                    screen = DriveScreen.Ready(accountEmail, System.currentTimeMillis())
                                                 } catch (e: Exception) {
                                                     screen = DriveScreen.Error(e.message ?: "Key restore failed. Check your passphrase.")
                                                 } finally {
@@ -212,17 +215,20 @@ class DriveConnectionActivity : ComponentActivity() {
                                     syncState   = syncStatus.state,
                                     onSyncNow   = {
                                         screen = DriveScreen.Loading("Syncing...")
-                                        authorizeGoogle { token ->
-                                            if (token == null) { screen = DriveScreen.AuthRequired(""); return@authorizeGoogle }
+                                        authorizeGoogle { email, token ->
+                                            if (token == null) { screen = DriveScreen.AuthRequired(current.email); return@authorizeGoogle }
+                                            val accountEmail = email ?: current.email
                                             lifecycleScope.launch {
                                                 val result = withContext(Dispatchers.IO) {
                                                     container.driveSyncEngine.performSyncWithAccessToken(this@DriveConnectionActivity, token)
                                                 }
                                                 screen = when (result) {
-                                                    is DriveSyncExecutionResult.Success ->
-                                                        DriveScreen.Ready(current.email, System.currentTimeMillis())
+                                                    is DriveSyncExecutionResult.Success -> {
+                                                        container.driveSyncStatusRepository.updateStatus(DriveSyncState.SUCCESS, accountEmail = accountEmail)
+                                                        DriveScreen.Ready(accountEmail, System.currentTimeMillis())
+                                                    }
                                                     is DriveSyncExecutionResult.AuthRequired ->
-                                                        DriveScreen.AuthRequired(current.email)
+                                                        DriveScreen.AuthRequired(accountEmail)
                                                     else ->
                                                         DriveScreen.Error("Sync failed. Check network connection.")
                                                 }
@@ -230,10 +236,11 @@ class DriveConnectionActivity : ComponentActivity() {
                                         }
                                     },
                                     onSwitchAccount = {
-                                        screen = DriveScreen.Loading("Selecting account...")
-                                        authorizeGoogle { token ->
-                                            if (token != null) {
-                                                screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
+                                        screen = DriveScreen.Loading("Opening Google Account Chooser...")
+                                        authorizeGoogle { email, token ->
+                                            if (email != null && token != null) {
+                                                container.driveSyncStatusRepository.updateStatus(DriveSyncState.SUCCESS, accountEmail = email)
+                                                screen = DriveScreen.Ready(email, System.currentTimeMillis())
                                             } else {
                                                 screen = DriveScreen.Ready(current.email, current.lastSyncMs)
                                             }
@@ -247,15 +254,19 @@ class DriveConnectionActivity : ComponentActivity() {
                                 ReconnectScreen(
                                     email = current.email.ifBlank { "Google Account" },
                                     onReconnect = {
-                                        screen = DriveScreen.Loading("Reconnecting...")
-                                        authorizeGoogle { token ->
+                                        screen = DriveScreen.Loading("Opening Google Account Chooser...")
+                                        authorizeGoogle { email, token ->
                                             if (token == null) { screen = DriveScreen.Error("Authorization cancelled."); return@authorizeGoogle }
+                                            val accountEmail = email ?: current.email
                                             lifecycleScope.launch {
                                                 val result = withContext(Dispatchers.IO) {
                                                     container.driveSyncEngine.performSyncWithAccessToken(this@DriveConnectionActivity, token)
                                                 }
                                                 screen = when (result) {
-                                                    is DriveSyncExecutionResult.Success -> DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
+                                                    is DriveSyncExecutionResult.Success -> {
+                                                        container.driveSyncStatusRepository.updateStatus(DriveSyncState.SUCCESS, accountEmail = accountEmail)
+                                                        DriveScreen.Ready(accountEmail, System.currentTimeMillis())
+                                                    }
                                                     else -> DriveScreen.Error("Reconnect failed.")
                                                 }
                                             }
@@ -288,7 +299,7 @@ class DriveConnectionActivity : ComponentActivity() {
                                     },
                                     onDeleteAll = {
                                         screen = DriveScreen.Loading("Deleting all Drive data...")
-                                        authorizeGoogle { token ->
+                                        authorizeGoogle { _, token ->
                                             lifecycleScope.launch {
                                                 try {
                                                     if (token != null) {
@@ -316,30 +327,44 @@ class DriveConnectionActivity : ComponentActivity() {
         }
     }
 
-    private fun authorizeGoogle(onResult: (token: String?) -> Unit) {
-        pendingTokenCallback = onResult
-        val request = AuthorizationRequest.builder()
+    private fun authorizeGoogle(onResult: (email: String?, token: String?) -> Unit) {
+        pendingAuthCallback = onResult
+        val accounts = AccountManager.get(this).getAccountsByType("com.google")
+        val primaryAccount = accounts.firstOrNull()
+        val accountName = primaryAccount?.name ?: "Google Account Connected"
+
+        val requestBuilder = AuthorizationRequest.builder()
             .setRequestedScopes(listOf(Scope(DRIVE_FILE_SCOPE)))
-            .build()
+
+        if (primaryAccount != null) {
+            requestBuilder.setAccount(primaryAccount)
+        }
+
+        val request = requestBuilder.build()
+
         Identity.getAuthorizationClient(this)
             .authorize(request)
             .addOnSuccessListener { result ->
                 if (result.hasResolution()) {
                     val pi = result.pendingIntent
                     if (pi == null) {
-                        onResult(null)
-                        pendingTokenCallback = null
+                        val callback = pendingAuthCallback
+                        pendingAuthCallback = null
+                        callback?.invoke(null, null)
                     } else {
                         authorizationLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
                     }
                 } else {
-                    pendingTokenCallback = null
-                    onResult(result.accessToken?.takeIf { it.isNotBlank() })
+                    val token = result.accessToken?.takeIf { it.isNotBlank() }
+                    val callback = pendingAuthCallback
+                    pendingAuthCallback = null
+                    callback?.invoke(accountName, token)
                 }
             }
             .addOnFailureListener {
-                pendingTokenCallback = null
-                onResult(null)
+                val callback = pendingAuthCallback
+                pendingAuthCallback = null
+                callback?.invoke(null, null)
             }
     }
 
