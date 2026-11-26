@@ -122,7 +122,7 @@ fun DesktopSettingsScreen(
                     OutlinedTextField(
                         value = passphraseInput,
                         onValueChange = { passphraseInput = it },
-                        label = { Text("Recovery phrase (16+ characters)") },
+                        label = { Text("Recovery phrase (8+ characters)") },
                         visualTransformation = PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -149,7 +149,7 @@ fun DesktopSettingsScreen(
 
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
-                            enabled = !syncRunning && passphraseInput.length >= 16 && passphraseInput == confirmPassphraseInput,
+                            enabled = !syncRunning && passphraseInput.length >= 8 && passphraseInput == confirmPassphraseInput,
                             onClick = {
                                 val phrase = passphraseInput.toCharArray()
                                 syncRunning = true
@@ -177,7 +177,7 @@ fun DesktopSettingsScreen(
                         }
 
                         Button(
-                            enabled = !syncRunning && passphraseInput.length >= 16,
+                            enabled = !syncRunning && passphraseInput.length >= 8,
                             onClick = {
                                 val phrase = passphraseInput.toCharArray()
                                 syncRunning = true

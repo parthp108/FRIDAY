@@ -16,7 +16,8 @@ enum class DriveSyncState {
 data class DriveSyncStatus(
     val state: DriveSyncState = DriveSyncState.IDLE,
     val lastSyncTimeMs: Long = 0L,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val accountEmail: String? = null
 )
 
 class DriveSyncStatusRepository(context: Context) {
@@ -33,19 +34,22 @@ class DriveSyncStatusRepository(context: Context) {
         val state = runCatching { DriveSyncState.valueOf(stateName) }.getOrDefault(DriveSyncState.IDLE)
         val lastSync = prefs.getLong("last_sync_ms", 0L)
         val errorMsg = prefs.getString("error_message", null)
-        return DriveSyncStatus(state, lastSync, errorMsg)
+        val email = prefs.getString("account_email", null)
+        return DriveSyncStatus(state, lastSync, errorMsg, email)
     }
 
-    fun updateStatus(state: DriveSyncState, errorMessage: String? = null) {
+    fun updateStatus(state: DriveSyncState, errorMessage: String? = null, accountEmail: String? = null) {
         val now = System.currentTimeMillis()
         val lastSync = if (state == DriveSyncState.SUCCESS) now else _status.value.lastSyncTimeMs
-        val newStatus = DriveSyncStatus(state, lastSync, errorMessage)
+        val email = accountEmail ?: _status.value.accountEmail
+        val newStatus = DriveSyncStatus(state, lastSync, errorMessage, email)
         _status.value = newStatus
 
         prefs.edit()
             .putString("state", state.name)
             .putLong("last_sync_ms", lastSync)
             .putString("error_message", errorMessage)
+            .putString("account_email", email)
             .apply()
     }
 
@@ -53,5 +57,10 @@ class DriveSyncStatusRepository(context: Context) {
         if (_status.value.state == DriveSyncState.AUTH_REQUIRED) {
             updateStatus(DriveSyncState.IDLE)
         }
+    }
+
+    fun clearAll() {
+        _status.value = DriveSyncStatus()
+        prefs.edit().clear().apply()
     }
 }

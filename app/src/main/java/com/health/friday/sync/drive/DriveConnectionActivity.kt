@@ -18,10 +18,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SwitchAccount
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Warning
@@ -65,23 +67,12 @@ private val Divider      = Color(0xFF1E293B)
 
 // ─── Screen states ───────────────────────────────────────────────────────────
 private sealed interface DriveScreen {
-    // User has nothing set up
-    object NewUser : DriveScreen
-    // OAuth done, no local key yet — are they first device or restoring?
-    object ChoosePath : DriveScreen
-    // Create new key: enter passphrase
     object CreateKey : DriveScreen
-    // Restore from Drive: enter passphrase
     object RestoreKey : DriveScreen
-    // All good
     data class Ready(val email: String, val lastSyncMs: Long) : DriveScreen
-    // Auth expired
     data class AuthRequired(val email: String) : DriveScreen
-    // Something went wrong
     data class Error(val message: String) : DriveScreen
-    // Loading / in-progress
     data class Loading(val message: String) : DriveScreen
-    // Delete confirmation
     object ConfirmDelete : DriveScreen
 }
 
@@ -116,14 +107,16 @@ class DriveConnectionActivity : ComponentActivity() {
                 val syncStatus by container.driveSyncStatusRepository.status.collectAsState()
                 val hasMasterKey = container.cloudSyncSecurity.hasLocalMasterKey()
 
-                // Derive initial screen
                 val initial: DriveScreen = when {
                     syncStatus.state == DriveSyncState.AUTH_REQUIRED ->
-                        DriveScreen.AuthRequired(email = "")
+                        DriveScreen.AuthRequired(email = syncStatus.accountEmail.orEmpty())
                     hasMasterKey ->
-                        DriveScreen.Ready(email = "", lastSyncMs = syncStatus.lastSyncTimeMs)
+                        DriveScreen.Ready(
+                            email = syncStatus.accountEmail.orEmpty(),
+                            lastSyncMs = syncStatus.lastSyncTimeMs
+                        )
                     else ->
-                        DriveScreen.NewUser
+                        DriveScreen.CreateKey
                 }
 
                 var screen by remember { mutableStateOf<DriveScreen>(initial) }
@@ -140,47 +133,32 @@ class DriveConnectionActivity : ComponentActivity() {
                         transitionSpec = { fadeIn() togetherWith fadeOut() }
                     ) { current ->
                         when (current) {
-                            is DriveScreen.NewUser ->
-                                NewUserScreen(
-                                    onBack = { finish() },
-                                    onConnect = { authorizeGoogle { token ->
-                                        if (token == null) {
-                                            screen = DriveScreen.Error("Google authorization cancelled.")
-                                        } else {
-                                            screen = if (hasMasterKey) DriveScreen.Ready("", syncStatus.lastSyncTimeMs)
-                                                     else DriveScreen.ChoosePath
-                                        }
-                                    }}
-                                )
-
-                            is DriveScreen.ChoosePath ->
-                                ChoosePathScreen(
-                                    onFirstDevice = { screen = DriveScreen.CreateKey },
-                                    onRestoring   = { screen = DriveScreen.RestoreKey },
-                                    onBack        = { screen = DriveScreen.NewUser }
-                                )
-
                             is DriveScreen.CreateKey ->
                                 PassphraseScreen(
-                                    title    = "Create your sync key",
-                                    subtitle = "This key encrypts all your FRIDAY data before it leaves your phone. Write it down — FRIDAY cannot recover it for you.",
-                                    cta      = "Create key & connect",
+                                    title    = "Set up Google Drive Sync",
+                                    subtitle = "Create your 8+ character recovery passphrase to encrypt your FRIDAY health data end-to-end.",
+                                    cta      = "Continue & Connect Google Account",
                                     confirm  = true,
-                                    onBack   = { screen = DriveScreen.ChoosePath },
+                                    onSwitchToRestore = { screen = DriveScreen.RestoreKey },
+                                    onBack   = { finish() },
                                     onSubmit = { passphrase ->
-                                        screen = DriveScreen.Loading("Creating key and backing up to Drive…")
+                                        screen = DriveScreen.Loading("Opening Google sign-in...")
                                         authorizeGoogle { token ->
                                             if (token == null) {
-                                                screen = DriveScreen.Error("Google authorization failed.")
+                                                screen = DriveScreen.Error("Google authorization cancelled or failed.")
                                                 return@authorizeGoogle
                                             }
+                                            screen = DriveScreen.Loading("Creating key & backing up to Drive...")
                                             lifecycleScope.launch {
                                                 try {
                                                     withContext(Dispatchers.IO) {
                                                         container.driveSyncEngine.backUpRecoveryKey(token, passphrase)
                                                     }
-                                                    container.driveSyncStatusRepository.clearAuthRequired()
-                                                    screen = DriveScreen.Ready("", System.currentTimeMillis())
+                                                    container.driveSyncStatusRepository.updateStatus(
+                                                        state = DriveSyncState.SUCCESS,
+                                                        accountEmail = "Google Account Connected"
+                                                    )
+                                                    screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
                                                 } catch (e: Exception) {
                                                     screen = DriveScreen.Error(e.message ?: "Key creation failed.")
                                                 } finally {
@@ -193,25 +171,30 @@ class DriveConnectionActivity : ComponentActivity() {
 
                             is DriveScreen.RestoreKey ->
                                 PassphraseScreen(
-                                    title    = "Restore your sync key",
-                                    subtitle = "Enter the passphrase you created on your first device. FRIDAY will download the encrypted key from Drive.",
-                                    cta      = "Restore & connect",
+                                    title    = "Restore existing key",
+                                    subtitle = "Enter the 8+ character passphrase created on your first device to decrypt and connect your backup.",
+                                    cta      = "Restore & Connect Google Account",
                                     confirm  = false,
-                                    onBack   = { screen = DriveScreen.ChoosePath },
+                                    onSwitchToRestore = null,
+                                    onBack   = { screen = DriveScreen.CreateKey },
                                     onSubmit = { passphrase ->
-                                        screen = DriveScreen.Loading("Restoring key from Drive…")
+                                        screen = DriveScreen.Loading("Opening Google sign-in...")
                                         authorizeGoogle { token ->
                                             if (token == null) {
-                                                screen = DriveScreen.Error("Google authorization failed.")
+                                                screen = DriveScreen.Error("Google authorization cancelled or failed.")
                                                 return@authorizeGoogle
                                             }
+                                            screen = DriveScreen.Loading("Restoring key from Drive...")
                                             lifecycleScope.launch {
                                                 try {
                                                     withContext(Dispatchers.IO) {
                                                         container.driveSyncEngine.restoreRecoveryKey(token, passphrase)
                                                     }
-                                                    container.driveSyncStatusRepository.clearAuthRequired()
-                                                    screen = DriveScreen.Ready("", System.currentTimeMillis())
+                                                    container.driveSyncStatusRepository.updateStatus(
+                                                        state = DriveSyncState.SUCCESS,
+                                                        accountEmail = "Google Account Connected"
+                                                    )
+                                                    screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
                                                 } catch (e: Exception) {
                                                     screen = DriveScreen.Error(e.message ?: "Key restore failed. Check your passphrase.")
                                                 } finally {
@@ -224,10 +207,11 @@ class DriveConnectionActivity : ComponentActivity() {
 
                             is DriveScreen.Ready ->
                                 ReadyScreen(
-                                    lastSyncMs  = current.lastSyncMs,
+                                    email       = current.email.ifBlank { syncStatus.accountEmail ?: "Google Account Connected" },
+                                    lastSyncMs  = current.lastSyncMs.takeIf { it > 0 } ?: syncStatus.lastSyncTimeMs,
                                     syncState   = syncStatus.state,
                                     onSyncNow   = {
-                                        screen = DriveScreen.Loading("Syncing…")
+                                        screen = DriveScreen.Loading("Syncing...")
                                         authorizeGoogle { token ->
                                             if (token == null) { screen = DriveScreen.AuthRequired(""); return@authorizeGoogle }
                                             lifecycleScope.launch {
@@ -236,23 +220,34 @@ class DriveConnectionActivity : ComponentActivity() {
                                                 }
                                                 screen = when (result) {
                                                     is DriveSyncExecutionResult.Success ->
-                                                        DriveScreen.Ready("", System.currentTimeMillis())
+                                                        DriveScreen.Ready(current.email, System.currentTimeMillis())
                                                     is DriveSyncExecutionResult.AuthRequired ->
-                                                        DriveScreen.AuthRequired("")
+                                                        DriveScreen.AuthRequired(current.email)
                                                     else ->
-                                                        DriveScreen.Error("Sync failed. Check your connection.")
+                                                        DriveScreen.Error("Sync failed. Check network connection.")
                                                 }
                                             }
                                         }
                                     },
-                                    onDelete    = { screen = DriveScreen.ConfirmDelete },
-                                    onBack      = { finish() }
+                                    onSwitchAccount = {
+                                        screen = DriveScreen.Loading("Selecting account...")
+                                        authorizeGoogle { token ->
+                                            if (token != null) {
+                                                screen = DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
+                                            } else {
+                                                screen = DriveScreen.Ready(current.email, current.lastSyncMs)
+                                            }
+                                        }
+                                    },
+                                    onDelete = { screen = DriveScreen.ConfirmDelete },
+                                    onBack   = { finish() }
                                 )
 
                             is DriveScreen.AuthRequired ->
                                 ReconnectScreen(
+                                    email = current.email.ifBlank { "Google Account" },
                                     onReconnect = {
-                                        screen = DriveScreen.Loading("Reconnecting…")
+                                        screen = DriveScreen.Loading("Reconnecting...")
                                         authorizeGoogle { token ->
                                             if (token == null) { screen = DriveScreen.Error("Authorization cancelled."); return@authorizeGoogle }
                                             lifecycleScope.launch {
@@ -260,7 +255,7 @@ class DriveConnectionActivity : ComponentActivity() {
                                                     container.driveSyncEngine.performSyncWithAccessToken(this@DriveConnectionActivity, token)
                                                 }
                                                 screen = when (result) {
-                                                    is DriveSyncExecutionResult.Success -> DriveScreen.Ready("", System.currentTimeMillis())
+                                                    is DriveSyncExecutionResult.Success -> DriveScreen.Ready("Google Account Connected", System.currentTimeMillis())
                                                     else -> DriveScreen.Error("Reconnect failed.")
                                                 }
                                             }
@@ -275,35 +270,40 @@ class DriveConnectionActivity : ComponentActivity() {
                             is DriveScreen.Error ->
                                 ErrorScreen(
                                     message = current.message,
-                                    onRetry = { screen = if (hasMasterKey) DriveScreen.Ready("", syncStatus.lastSyncTimeMs) else DriveScreen.NewUser },
+                                    onRetry = { screen = if (hasMasterKey) DriveScreen.Ready("", syncStatus.lastSyncTimeMs) else DriveScreen.CreateKey },
                                     onBack  = { finish() }
                                 )
 
                             is DriveScreen.ConfirmDelete ->
                                 DeleteScreen(
                                     onDeleteKeyOnly = {
-                                        screen = DriveScreen.Loading("Removing local key…")
+                                        screen = DriveScreen.Loading("Removing local key...")
                                         lifecycleScope.launch {
                                             withContext(Dispatchers.IO) {
                                                 container.cloudSyncSecurity.deleteLocalKey()
+                                                container.driveSyncStatusRepository.clearAll()
                                             }
-                                            screen = DriveScreen.NewUser
+                                            screen = DriveScreen.CreateKey
                                         }
                                     },
                                     onDeleteAll = {
-                                        screen = DriveScreen.Loading("Deleting all Drive data…")
+                                        screen = DriveScreen.Loading("Deleting all Drive data...")
                                         authorizeGoogle { token ->
-                                            if (token == null) { screen = DriveScreen.Error("Authorization required to delete Drive data."); return@authorizeGoogle }
                                             lifecycleScope.launch {
                                                 try {
-                                                    withContext(Dispatchers.IO) {
-                                                        container.driveSyncEngine.deleteVaultAndLocalKey(token)
+                                                    if (token != null) {
+                                                        withContext(Dispatchers.IO) {
+                                                            container.driveSyncEngine.deleteVaultAndLocalKey(token)
+                                                        }
+                                                    } else {
+                                                        container.cloudSyncSecurity.deleteLocalKey()
                                                     }
-                                                } catch (e: Exception) {
-                                                    // best-effort — still wipe local key
+                                                } catch (_: Exception) {
                                                     container.cloudSyncSecurity.deleteLocalKey()
+                                                } finally {
+                                                    container.driveSyncStatusRepository.clearAll()
                                                 }
-                                                screen = DriveScreen.NewUser
+                                                screen = DriveScreen.CreateKey
                                             }
                                         }
                                     },
@@ -326,14 +326,21 @@ class DriveConnectionActivity : ComponentActivity() {
             .addOnSuccessListener { result ->
                 if (result.hasResolution()) {
                     val pi = result.pendingIntent
-                    if (pi == null) { onResult(null); pendingTokenCallback = null }
-                    else authorizationLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+                    if (pi == null) {
+                        onResult(null)
+                        pendingTokenCallback = null
+                    } else {
+                        authorizationLauncher.launch(IntentSenderRequest.Builder(pi.intentSender).build())
+                    }
                 } else {
                     pendingTokenCallback = null
                     onResult(result.accessToken?.takeIf { it.isNotBlank() })
                 }
             }
-            .addOnFailureListener { pendingTokenCallback = null; onResult(null) }
+            .addOnFailureListener {
+                pendingTokenCallback = null
+                onResult(null)
+            }
     }
 
     companion object {
@@ -359,86 +366,12 @@ private fun ScreenShell(
 }
 
 @Composable
-private fun NewUserScreen(onBack: () -> Unit, onConnect: () -> Unit) {
-    ScreenShell(onBack = onBack) {
-        Spacer(Modifier.height(32.dp))
-        // Google-style account avatar placeholder
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
-                .background(Surface2)
-                .align(Alignment.CenterHorizontally),
-            contentAlignment = Alignment.Center
-        ) {
-            Text("G", color = AccentBlue, fontSize = 32.sp, fontWeight = FontWeight.Bold)
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "Connect Google Drive",
-            color = TextPrimary,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "FRIDAY keeps your data encrypted end-to-end. Only you can read it.",
-            color = TextSecond,
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
-        )
-        Spacer(Modifier.height(40.dp))
-        FridayPrimaryButton(label = "Sign in with Google", onClick = onConnect)
-    }
-}
-
-@Composable
-private fun ChoosePathScreen(onFirstDevice: () -> Unit, onRestoring: () -> Unit, onBack: () -> Unit) {
-    ScreenShell(onBack = onBack) {
-        Spacer(Modifier.height(32.dp))
-        Text("Which device is this?", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text("Your Drive is connected. Now tell FRIDAY whether to create a new encryption key or restore one.", color = TextSecond, fontSize = 14.sp)
-        Spacer(Modifier.height(32.dp))
-        PathCard(
-            title    = "My first device",
-            subtitle = "Create a new encryption key and back it up to Drive.",
-            onClick  = onFirstDevice
-        )
-        Spacer(Modifier.height(12.dp))
-        PathCard(
-            title    = "I'm adding a second device",
-            subtitle = "Restore the key I created on my other device.",
-            onClick  = onRestoring
-        )
-    }
-}
-
-@Composable
-private fun PathCard(title: String, subtitle: String, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .border(1.dp, Divider, RoundedCornerShape(16.dp)),
-        color = Surface1
-    ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(subtitle, color = TextSecond, fontSize = 13.sp)
-        }
-    }
-}
-
-@Composable
 private fun PassphraseScreen(
     title: String,
     subtitle: String,
     cta: String,
     confirm: Boolean,
+    onSwitchToRestore: (() -> Unit)?,
     onBack: () -> Unit,
     onSubmit: (CharArray) -> Unit
 ) {
@@ -453,11 +386,11 @@ private fun PassphraseScreen(
     val canGo  = keyOk && confOk
 
     ScreenShell(onBack = onBack) {
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text(title, color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(subtitle, color = TextSecond, fontSize = 14.sp, lineHeight = 20.sp)
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
 
         FridayTextField(
             value         = key,
@@ -480,12 +413,23 @@ private fun PassphraseScreen(
             )
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(28.dp))
         FridayPrimaryButton(
             label   = cta,
             enabled = canGo,
             onClick = { onSubmit(key.toCharArray()) }
         )
+
+        if (onSwitchToRestore != null) {
+            Spacer(Modifier.height(12.dp))
+            TextButton(
+                onClick = onSwitchToRestore,
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text("Already have a key? Restore from Drive", color = AccentBlue, fontSize = 13.sp)
+            }
+        }
+
         Spacer(Modifier.height(16.dp))
         Text(
             "Write this down. FRIDAY cannot recover your passphrase.",
@@ -499,9 +443,11 @@ private fun PassphraseScreen(
 
 @Composable
 private fun ReadyScreen(
+    email: String,
     lastSyncMs: Long,
     syncState: DriveSyncState,
     onSyncNow: () -> Unit,
+    onSwitchAccount: () -> Unit,
     onDelete: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -519,68 +465,124 @@ private fun ReadyScreen(
     val isSyncing = syncState == DriveSyncState.SYNCING
 
     ScreenShell(onBack = onBack) {
-        Spacer(Modifier.height(32.dp))
-        // Status pill
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(AccentGreen.copy(alpha = 0.12f))
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .align(Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Spacer(Modifier.height(24.dp))
+        Text("Drive Sync Active", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(16.dp))
+
+        // Google Play Store style Account Card
+        Surface(
+            color = Surface1,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth().border(1.dp, Divider, RoundedCornerShape(18.dp))
         ) {
-            Icon(Icons.Default.Check, contentDescription = null, tint = AccentGreen, modifier = Modifier.size(16.dp))
-            Text("Drive connected", color = AccentGreen, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(AccentBlue.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = email.take(1).uppercase().ifBlank { "G" },
+                            color = AccentBlue,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = email.ifBlank { "Google Account Connected" },
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(modifier = Modifier.size(8.dp).background(AccentGreen, CircleShape))
+                            Text("Connected & Vault Ready", color = AccentGreen, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = Divider)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Last Sync", color = TextSecond, fontSize = 13.sp)
+                    Text(syncLabel, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+            }
         }
 
-        Spacer(Modifier.height(24.dp))
-        Text(syncLabel, color = TextSecond, fontSize = 14.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(28.dp))
 
         FridayPrimaryButton(
-            label   = if (isSyncing) "Syncing…" else "Sync now",
+            label   = if (isSyncing) "Syncing..." else "Sync Now",
             enabled = !isSyncing,
             onClick = onSyncNow
         )
+
         if (isSyncing) {
             Spacer(Modifier.height(12.dp))
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = AccentBlue)
         }
 
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedButton(
+            onClick = onSwitchAccount,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary)
+        ) {
+            Icon(Icons.Default.SwitchAccount, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Switch / Connect Another Google Account", fontSize = 13.sp)
+        }
+
         Spacer(Modifier.weight(1f))
         HorizontalDivider(color = Divider)
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
                 .clickable(onClick = onDelete)
-                .padding(16.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Icon(Icons.Default.Delete, contentDescription = null, tint = AccentRed, modifier = Modifier.size(20.dp))
             Column {
-                Text("Remove sync data", color = AccentRed, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                Text("Delete local key or wipe Drive vault", color = TextSecond, fontSize = 12.sp)
+                Text("Remove / Delete Sync Data", color = AccentRed, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("Delete local key or wipe Google Drive vault", color = TextSecond, fontSize = 12.sp)
             }
         }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun ReconnectScreen(onReconnect: () -> Unit, onBack: () -> Unit) {
+private fun ReconnectScreen(email: String, onReconnect: () -> Unit, onBack: () -> Unit) {
     ScreenShell(onBack = onBack) {
         Spacer(Modifier.height(48.dp))
         Icon(Icons.Default.Warning, contentDescription = null, tint = AccentAmber,
             modifier = Modifier.size(48.dp).align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(16.dp))
-        Text("Reconnect required", color = TextPrimary, fontSize = 22.sp,
+        Text("Reconnect Required", color = TextPrimary, fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold, modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(8.dp))
-        Text("Your Google Drive authorization has expired. Sign in again to resume syncing.",
+        Text("Your Google Drive authorization has expired. Re-authenticate to resume background sync.",
             color = TextSecond, fontSize = 14.sp, textAlign = TextAlign.Center,
             modifier = Modifier.align(Alignment.CenterHorizontally))
         Spacer(Modifier.height(40.dp))
@@ -623,9 +625,9 @@ private fun DeleteScreen(
 ) {
     ScreenShell {
         Spacer(Modifier.height(32.dp))
-        Text("Remove sync data", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Text("Remove Sync Data", color = TextPrimary, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
-        Text("Choose what to remove. This cannot be undone.", color = TextSecond, fontSize = 14.sp)
+        Text("Choose what to remove. This action cannot be undone.", color = TextSecond, fontSize = 14.sp)
         Spacer(Modifier.height(32.dp))
 
         // Option A — key only
@@ -640,7 +642,7 @@ private fun DeleteScreen(
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Remove local key only", color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Deletes the key from this device. Your Drive data stays intact — you can restore access with your passphrase.",
+                    "Deletes the key from this device. Your Drive vault files stay intact — you can restore access anytime with your passphrase.",
                     color = TextSecond, fontSize = 13.sp, lineHeight = 18.sp
                 )
             }
@@ -660,7 +662,7 @@ private fun DeleteScreen(
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Delete everything", color = AccentRed, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(
-                    "Removes the local key AND all encrypted batch files from Google Drive. Your data cannot be recovered.",
+                    "Removes the local key AND deletes all encrypted batch files from Google Drive.",
                     color = TextSecond, fontSize = 13.sp, lineHeight = 18.sp
                 )
             }
