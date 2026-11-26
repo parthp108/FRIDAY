@@ -21,6 +21,11 @@ internal data class DesktopDriveFile(
     val modifiedTime: String? = null
 )
 
+internal data class DesktopChangesResult(
+    val newFiles: List<DesktopDriveFile>,
+    val newPageToken: String
+)
+
 /** Google Drive v3 transport restricted to FRIDAY's app-created vault files. */
 internal class DesktopDriveVaultClient {
     private val json = Json { ignoreUnknownKeys = true }
@@ -137,6 +142,82 @@ internal class DesktopDriveVaultClient {
             method = "GET",
             url = "$DRIVE_API/files/${encode(fileId)}?alt=media"
         )
+    }
+
+    fun fetchStartPageToken(accessToken: String): String {
+        val url = "$DRIVE_API/changes/startPageToken"
+        val response = request(accessToken, "GET", url)
+        return json.parseToJsonElement(response).jsonObject["startPageToken"]
+            ?.jsonPrimitive?.content ?: throw IOException("No startPageToken returned from Google Drive.")
+    }
+
+    fun fetchChanges(
+        accessToken: String,
+        pageToken: String,
+        folderId: String
+    ): DesktopChangesResult {
+        val files = mutableListOf<DesktopDriveFile>()
+        var currentToken: String? = pageToken
+        var latestToken: String? = null
+        val seenTokens = mutableSetOf<String>()
+
+        while (!currentToken.isNullOrBlank()) {
+            check(seenTokens.add(currentToken)) {
+                "Google Drive repeated a page token in fetchChanges; stopping pagination."
+            }
+            val url = "$DRIVE_API/changes?pageToken=${encode(currentToken)}&spaces=drive&pageSize=1000&fields=nextPageToken,newStartPageToken,changes(removed,file(id,name,parents,trashed))"
+            val response = request(accessToken, "GET", url)
+
+            val root = json.parseToJsonElement(response).jsonObject
+            val changesArray = root["changes"]?.jsonArray ?: JsonArray(emptyList())
+
+            for (i in 0 until changesArray.size) {
+                val change = changesArray[i].jsonObject
+                val isRemoved = change["removed"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                if (isRemoved) continue
+
+                val fileObj = change["file"]?.jsonObject ?: continue
+                val trashed = fileObj["trashed"]?.jsonPrimitive?.content?.toBoolean() ?: false
+                if (trashed) continue
+
+                val parents = fileObj["parents"]?.jsonArray ?: JsonArray(emptyList())
+                var isInVault = false
+                for (j in 0 until parents.size) {
+                    if (parents[j].jsonPrimitive.content == folderId) {
+                        isInVault = true
+                        break
+                    }
+                }
+
+                if (isInVault) {
+                    val id = fileObj["id"]?.jsonPrimitive?.content.orEmpty()
+                    val name = fileObj["name"]?.jsonPrimitive?.content.orEmpty()
+                    if (id.isNotBlank() && name.isNotBlank()) {
+                        files.add(DesktopDriveFile(id = id, name = name))
+                    }
+                }
+            }
+
+            val nextToken = root["nextPageToken"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            val newStartToken = root["newStartPageToken"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+
+            if (newStartToken != null) {
+                latestToken = newStartToken
+            }
+
+            if (nextToken != null && nextToken != currentToken) {
+                currentToken = nextToken
+            } else {
+                break
+            }
+        }
+
+        val finalToken = latestToken
+            ?: throw IllegalStateException("Google Drive changes.list completed without returning a newStartPageToken")
+
+        val uniqueFiles = files.distinctBy { it.id }
+
+        return DesktopChangesResult(newFiles = uniqueFiles, newPageToken = finalToken)
     }
 
     private fun uploadMultipartJson(accessToken: String, metadataJson: String, content: String): String {

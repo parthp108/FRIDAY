@@ -49,14 +49,47 @@ class DesktopDriveSyncEngine internal constructor(
         try {
             val accessToken = oauth.accessToken()
             val folderId = drive.ensureVaultFolder(accessToken)
-            val upload = uploadPending(accessToken, folderId, masterKey)
-            val download = downloadBatches(accessToken, folderId, masterKey)
+
+            var uploadBatches = 0
+            var uploadOps = 0
+            var uploadError: Throwable? = null
+
+            try {
+                val upload = uploadPending(accessToken, folderId, masterKey)
+                uploadBatches = upload.first
+                uploadOps = upload.second
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                uploadError = e
+                System.err.println("[DesktopDriveSyncEngine] Upload path failed: ${e.message}")
+            }
+
+            var downloadedBatches = 0
+            var appliedOps = 0
+            var duplicateOps = 0
+            var downloadError: Throwable? = null
+
+            try {
+                val download = downloadBatches(accessToken, folderId, masterKey)
+                downloadedBatches = download.first
+                appliedOps = download.second.first
+                duplicateOps = download.second.second
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                downloadError = e
+                System.err.println("[DesktopDriveSyncEngine] Download path failed: ${e.message}")
+            }
+
+            if (uploadError != null && downloadError != null) {
+                throw uploadError
+            }
+
             return DesktopDriveSyncResult(
-                uploadedBatches = upload.first,
-                uploadedOperations = upload.second,
-                downloadedBatches = download.first,
-                appliedOperations = download.second.first,
-                duplicateOrStaleOperations = download.second.second
+                uploadedBatches = uploadBatches,
+                uploadedOperations = uploadOps,
+                downloadedBatches = downloadedBatches,
+                appliedOperations = appliedOps,
+                duplicateOrStaleOperations = duplicateOps
             )
         } finally {
             masterKey.destroy()
@@ -125,24 +158,58 @@ class DesktopDriveSyncEngine internal constructor(
         folderId: String,
         masterKey: PortableCloudMasterKey
     ): Pair<Int, Pair<Int, Int>> {
-        val files = drive.listBatchFiles(accessToken, folderId)
+        val currentCursor = store.readCursor()
+
+        val files: List<com.health.friday.desktop.sync.drive.DesktopDriveFile>
+        val nextPageToken: String
+        val pageToken = currentCursor.drivePageToken
+
+        if (pageToken.isNullOrBlank()) {
+            val startToken = drive.fetchStartPageToken(accessToken)
+            files = drive.listBatchFiles(accessToken, folderId)
+            nextPageToken = startToken
+        } else {
+            val changesResult = try {
+                drive.fetchChanges(accessToken, pageToken, folderId)
+            } catch (e: Exception) {
+                if (e.message?.contains("410") == true || e.message?.contains("pageToken") == true) {
+                    val startToken = drive.fetchStartPageToken(accessToken)
+                    val baselineFiles = drive.listBatchFiles(accessToken, folderId)
+                    com.health.friday.desktop.sync.drive.DesktopChangesResult(baselineFiles, startToken)
+                } else {
+                    throw e
+                }
+            }
+            files = changesResult.newFiles
+            nextPageToken = changesResult.newPageToken
+        }
+
         var downloadedBatches = 0
         var appliedOperations = 0
         var duplicates = 0
 
-        for (file in files) {
+        val uniqueFiles = files
+            .filter {
+                it.name.startsWith(com.health.friday.desktop.sync.drive.DesktopDriveVaultClient.BATCH_FILE_PREFIX) &&
+                    it.name.endsWith(com.health.friday.desktop.sync.drive.DesktopDriveVaultClient.BATCH_FILE_SUFFIX)
+            }
+            .distinctBy { it.id }
+
+        for (file in uniqueFiles) {
             val content = drive.downloadTextFile(accessToken, file.id)
             val encrypted = json.decodeFromString(EncryptedSyncPayload.serializer(), content)
             val batch = security.decryptBatch(encrypted, masterKey)
-            val expectedName = "${DesktopDriveVaultClient.BATCH_FILE_PREFIX}${batch.batchId}${DesktopDriveVaultClient.BATCH_FILE_SUFFIX}"
+            batch.validate()
+
+            val expectedName = "${com.health.friday.desktop.sync.drive.DesktopDriveVaultClient.BATCH_FILE_PREFIX}${batch.batchId}${com.health.friday.desktop.sync.drive.DesktopDriveVaultClient.BATCH_FILE_SUFFIX}"
             check(file.name == expectedName) {
                 "Drive batch filename does not match its authenticated batch ID."
             }
-            val cursor = store.readCursor()
+
             val result = store.ingestRemoteBatch(
                 batch,
                 SyncCursor(
-                    drivePageToken = cursor.drivePageToken,
+                    drivePageToken = currentCursor.drivePageToken,
                     lastSuccessfulSyncAtMs = System.currentTimeMillis()
                 )
             )
@@ -150,6 +217,13 @@ class DesktopDriveSyncEngine internal constructor(
             appliedOperations += result.appliedOperations
             duplicates += result.duplicateOperations
         }
+
+        store.saveCursor(
+            SyncCursor(
+                drivePageToken = nextPageToken,
+                lastSuccessfulSyncAtMs = System.currentTimeMillis()
+            )
+        )
 
         return downloadedBatches to (appliedOperations to duplicates)
     }

@@ -414,14 +414,47 @@ class AndroidDriveSyncEngine(
         }
         val folderId = drive.ensureVaultFolder(accessToken)
         val backfillReport = backfill.run()
-        val uploadResult = uploadPendingOutbox(accessToken, folderId)
-        val downloadResult = downloadRemoteBatches(accessToken, folderId)
+
+        var uploadBatches = 0
+        var uploadOps = 0
+        var uploadError: Throwable? = null
+
+        try {
+            val uploadResult = uploadPendingOutbox(accessToken, folderId)
+            uploadBatches = uploadResult.first
+            uploadOps = uploadResult.second
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            uploadError = e
+            System.err.println("[AndroidDriveSyncEngine] Upload path failed: ${e.message}")
+        }
+
+        var downloadBatches = 0
+        var downloadOps = 0
+        var downloadError: Throwable? = null
+
+        try {
+            val downloadResult = downloadRemoteBatches(accessToken, folderId)
+            downloadBatches = downloadResult.first
+            downloadOps = downloadResult.second
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            downloadError = e
+            System.err.println("[AndroidDriveSyncEngine] Download path failed: ${e.message}")
+        }
+
+        if (uploadError != null && downloadError != null) {
+            throw uploadError
+        }
+
         DriveSyncResult(
             backfilledRecords = backfillReport.totalRecords,
-            uploadedBatches = uploadResult.first,
-            uploadedOperations = uploadResult.second,
-            downloadedBatches = downloadResult.first,
-            appliedOperations = downloadResult.second
+            uploadedBatches = uploadBatches,
+            uploadedOperations = uploadOps,
+            downloadedBatches = downloadBatches,
+            appliedOperations = downloadOps
         )
     }
 
