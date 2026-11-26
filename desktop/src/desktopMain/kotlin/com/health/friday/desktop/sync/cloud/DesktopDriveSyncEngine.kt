@@ -9,8 +9,15 @@ import com.health.friday.shared.sync.cloud.SyncOperation
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.security.MessageDigest
 
 data class DesktopDriveSyncResult(
@@ -126,56 +133,127 @@ class DesktopDriveSyncEngine internal constructor(
         folderId: String,
         masterKey: PortableCloudMasterKey
     ): Pair<Int, Int> {
-        var uploadedBatches = 0
-        var uploadedOperations = 0
+        val pending = store.pendingOutbox(
+            MAX_OPERATIONS_PER_BATCH * MAX_BATCHES_PER_SYNC
+        )
 
-        repeat(MAX_BATCHES_PER_SYNC) {
-            val pending = store.pendingOutbox(MAX_OPERATIONS_PER_BATCH)
-            if (pending.isEmpty()) return uploadedBatches to uploadedOperations
-            require(pending.all { it.originDeviceId == deviceId }) {
-                "Desktop outbox contains an operation from another device. Refusing to batch it under this device identity."
-            }
+        if (pending.isEmpty()) return 0 to 0
 
-            val batchId = stableBatchId(deviceId, pending)
-            val batch = SyncBatch(
+        require(pending.all { it.originDeviceId == deviceId }) {
+            "Desktop outbox contains an operation from another device. " +
+                "Refusing to batch it under this device identity."
+        }
+
+        // Create distinct, deterministic batches before starting workers.
+        val batches = pending.chunked(MAX_OPERATIONS_PER_BATCH).map { operations ->
+            val batchId = stableBatchId(deviceId, operations)
+
+            SyncBatch(
                 batchId = batchId,
                 originDeviceId = deviceId,
                 createdAtMs = System.currentTimeMillis(),
-                operations = pending
+                operations = operations
             ).also { it.validate() }
-            val encrypted = security.encryptBatch(batch, masterKey)
-            val encoded = json.encodeToString(EncryptedSyncPayload.serializer(), encrypted)
-
-            val existingFile = drive.findBatchFile(accessToken, folderId, batchId)
-            if (existingFile == null) {
-                drive.uploadBatch(accessToken, folderId, batchId, encoded)
-            } else {
-                // A previous run may have uploaded the file and exited before
-                // marking the outbox. Verify exact operations before acknowledging it.
-                val previousContent = drive.downloadTextFile(accessToken, existingFile.id)
-                val previousPayload = json.decodeFromString(
-                    EncryptedSyncPayload.serializer(),
-                    previousContent
-                )
-                val previousBatch = security.decryptBatch(previousPayload, masterKey)
-                check(previousBatch.batchId == batchId) {
-                    "Existing Drive batch filename contains a different batch ID."
-                }
-                check(previousBatch.operations.sortedBy { it.operationId } == pending.sortedBy { it.operationId }) {
-                    "Existing Drive batch does not match the pending desktop outbox operations."
-                }
-            }
-
-            store.markUploaded(
-                operationIds = pending.map { it.operationId },
-                batchId = batchId,
-                uploadedAtMs = System.currentTimeMillis()
-            )
-            uploadedBatches++
-            uploadedOperations += pending.size
         }
 
-        return uploadedBatches to uploadedOperations
+        val semaphore = Semaphore(UPLOAD_CONCURRENCY)
+
+        val outcomes = supervisorScope {
+            batches.map { batch ->
+                async(Dispatchers.IO) {
+                    try {
+                        Result.success(
+                            semaphore.withPermit {
+                                val encrypted = security.encryptBatch(
+                                    batch,
+                                    masterKey
+                                )
+
+                                val encoded = json.encodeToString(
+                                    EncryptedSyncPayload.serializer(),
+                                    encrypted
+                                )
+
+                                val existingFile = drive.findBatchFile(
+                                    accessToken,
+                                    folderId,
+                                    batch.batchId
+                                )
+
+                                if (existingFile == null) {
+                                    drive.uploadBatch(
+                                        accessToken,
+                                        folderId,
+                                        batch.batchId,
+                                        encoded
+                                    )
+                                } else {
+                                    // Verify an earlier upload before acknowledging it.
+                                    val previousContent = drive.downloadTextFile(
+                                        accessToken,
+                                        existingFile.id
+                                    )
+
+                                    val previousPayload = json.decodeFromString(
+                                        EncryptedSyncPayload.serializer(),
+                                        previousContent
+                                    )
+
+                                    val previousBatch = security.decryptBatch(
+                                        previousPayload,
+                                        masterKey
+                                    )
+
+                                    check(previousBatch.batchId == batch.batchId) {
+                                        "Existing Drive batch filename contains a different batch ID."
+                                    }
+
+                                    check(
+                                        previousBatch.operations.sortedBy {
+                                            it.operationId
+                                        } == batch.operations.sortedBy {
+                                            it.operationId
+                                        }
+                                    ) {
+                                        "Existing Drive batch does not match the pending desktop outbox operations."
+                                    }
+                                }
+
+                                // Persist acknowledgement independently for each batch.
+                                store.markUploaded(
+                                    operationIds = batch.operations.map {
+                                        it.operationId
+                                    },
+                                    batchId = batch.batchId,
+                                    uploadedAtMs = System.currentTimeMillis()
+                                )
+
+                                batch.operations.size
+                            }
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+            }.awaitAll()
+        }
+
+        val failures = outcomes.mapNotNull { it.exceptionOrNull() }
+
+        if (failures.isNotEmpty()) {
+            val primary = failures.first()
+            failures
+                .filter { it !== primary }
+                .forEach(primary::addSuppressed)
+
+            throw primary
+        }
+
+        return outcomes.size to outcomes.sumOf {
+            it.getOrThrow()
+        }
     }
 
     private suspend fun downloadBatches(
@@ -269,6 +347,7 @@ class DesktopDriveSyncEngine internal constructor(
     }
 
     private companion object {
+        const val UPLOAD_CONCURRENCY = 3
         const val MAX_OPERATIONS_PER_BATCH = 200
         const val MAX_BATCHES_PER_SYNC = 50
     }

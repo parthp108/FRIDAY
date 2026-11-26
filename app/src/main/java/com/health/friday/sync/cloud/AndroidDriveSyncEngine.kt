@@ -24,8 +24,13 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import com.health.friday.shared.sync.cloud.DebouncedSyncTrigger
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -494,64 +499,127 @@ class AndroidDriveSyncEngine(
         accessToken: String,
         folderId: String
     ): Pair<Int, Int> {
-        var batchCount = 0
-        var operationCount = 0
+        val pending = cloudSyncStore.pendingOutbox(
+            limit = MAX_OPERATIONS_PER_BATCH * MAX_BATCHES_PER_SYNC
+        )
 
-        repeat(MAX_BATCHES_PER_SYNC) {
-            val pending = cloudSyncStore.pendingOutbox(limit = MAX_OPERATIONS_PER_BATCH)
-            if (pending.isEmpty()) return batchCount to operationCount
+        if (pending.isEmpty()) return 0 to 0
 
-            val nowMs = System.currentTimeMillis()
-            val batchId = StableCloudBatchId.from(deviceId, pending)
-            val batch = SyncBatch(
+        // Snapshot and partition once. Every worker receives a distinct batch.
+        val batches = pending.chunked(MAX_OPERATIONS_PER_BATCH).map { operations ->
+            val batchId = StableCloudBatchId.from(deviceId, operations)
+
+            SyncBatch(
                 batchId = batchId,
                 originDeviceId = deviceId,
-                createdAtMs = nowMs,
-                operations = pending
+                createdAtMs = System.currentTimeMillis(),
+                operations = operations
             ).also { it.validate() }
-
-            val encrypted = security.encryptBatch(batch)
-            val payload = json.encodeToString(EncryptedSyncPayload.serializer(), encrypted)
-            val fileName = "${DriveVaultClient.BATCH_FILE_PREFIX}${batch.batchId}${DriveVaultClient.BATCH_FILE_SUFFIX}"
-
-            // If the process died after a successful upload but before markUploaded,
-            // this finds the deterministic name and avoids creating a second copy.
-            val existingFile = drive.findTextFile(accessToken, folderId, fileName)
-            if (existingFile == null) {
-                drive.uploadTextFile(
-                    accessToken = accessToken,
-                    folderId = folderId,
-                    fileName = fileName,
-                    content = payload,
-                    appProperties = mapOf("fridayKind" to "sync-batch", "batchId" to batch.batchId)
-                )
-            } else {
-                // Verify the previous upload before marking this outbox set complete.
-                val previousJson = drive.downloadTextFile(accessToken, existingFile.id)
-                val previousEncrypted = json.decodeFromString(
-                    EncryptedSyncPayload.serializer(),
-                    previousJson
-                )
-                val previousBatch = security.decryptBatch(previousEncrypted)
-                check(previousBatch.batchId == batchId) {
-                    "Existing Drive batch filename contains a different batch ID"
-                }
-                check(previousBatch.operations.map { it.operationId }.toSet() ==
-                    batch.operations.map { it.operationId }.toSet()) {
-                    "Existing Drive batch does not contain the expected outbox operations"
-                }
-            }
-
-            cloudSyncStore.markUploaded(
-                operationIds = pending.map { it.operationId },
-                batchId = batch.batchId,
-                uploadedAtMs = nowMs
-            )
-            batchCount++
-            operationCount += pending.size
         }
 
-        return batchCount to operationCount
+        val semaphore = Semaphore(UPLOAD_CONCURRENCY)
+
+        val outcomes = supervisorScope {
+            batches.map { batch ->
+                async(Dispatchers.IO) {
+                    try {
+                        Result.success(
+                            semaphore.withPermit {
+                                val encrypted = security.encryptBatch(batch)
+                                val payload = json.encodeToString(
+                                    EncryptedSyncPayload.serializer(),
+                                    encrypted
+                                )
+
+                                val fileName =
+                                    "${DriveVaultClient.BATCH_FILE_PREFIX}" +
+                                        "${batch.batchId}" +
+                                        "${DriveVaultClient.BATCH_FILE_SUFFIX}"
+
+                                val existingFile = drive.findTextFile(
+                                    accessToken,
+                                    folderId,
+                                    fileName
+                                )
+
+                                if (existingFile == null) {
+                                    drive.uploadTextFile(
+                                        accessToken = accessToken,
+                                        folderId = folderId,
+                                        fileName = fileName,
+                                        content = payload,
+                                        appProperties = mapOf(
+                                            "fridayKind" to "sync-batch",
+                                            "batchId" to batch.batchId
+                                        )
+                                    )
+                                } else {
+                                    // Recover safely if a previous upload completed
+                                    // but its local acknowledgement did not.
+                                    val previousJson = drive.downloadTextFile(
+                                        accessToken,
+                                        existingFile.id
+                                    )
+
+                                    val previousEncrypted = json.decodeFromString(
+                                        EncryptedSyncPayload.serializer(),
+                                        previousJson
+                                    )
+
+                                    val previousBatch =
+                                        security.decryptBatch(previousEncrypted)
+
+                                    check(previousBatch.batchId == batch.batchId) {
+                                        "Existing Drive batch filename contains a different batch ID."
+                                    }
+
+                                    check(
+                                        previousBatch.operations
+                                            .map { it.operationId }.toSet() ==
+                                        batch.operations
+                                            .map { it.operationId }.toSet()
+                                    ) {
+                                        "Existing Drive batch does not contain the expected outbox operations."
+                                    }
+                                }
+
+                                // Acknowledge only this successfully uploaded batch.
+                                cloudSyncStore.markUploaded(
+                                    operationIds = batch.operations.map { it.operationId },
+                                    batchId = batch.batchId,
+                                    uploadedAtMs = System.currentTimeMillis()
+                                )
+
+                                batch.operations.size
+                            }
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Result.failure(e)
+                    }
+                }
+            }.awaitAll()
+        }
+
+        val failures = outcomes.mapNotNull { it.exceptionOrNull() }
+
+        if (failures.isNotEmpty()) {
+            val primary = failures.firstOrNull {
+                it is DriveAuthException ||
+                    it is DriveAuthorizationRequiredException
+            } ?: failures.first()
+
+            failures
+                .filter { it !== primary }
+                .forEach(primary::addSuppressed)
+
+            throw primary
+        }
+
+        return outcomes.size to outcomes.sumOf {
+            it.getOrThrow()
+        }
     }
 
     private suspend fun downloadRemoteBatches(
@@ -639,6 +707,7 @@ class AndroidDriveSyncEngine(
     }
 
     companion object {
+        private const val UPLOAD_CONCURRENCY = 3
         private const val MAX_OPERATIONS_PER_BATCH = 200
         private const val MAX_BATCHES_PER_SYNC = 50
     }
