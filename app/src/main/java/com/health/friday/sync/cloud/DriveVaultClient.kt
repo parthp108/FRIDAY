@@ -180,10 +180,14 @@ class DriveVaultClient {
     ): DriveChangesResult = withContext(Dispatchers.IO) {
         val files = mutableListOf<DriveVaultFile>()
         var currentToken: String? = pageToken
-        var latestToken = pageToken
+        var latestToken: String? = null
+        val seenTokens = mutableSetOf<String>()
 
         while (!currentToken.isNullOrBlank()) {
-            val url = "$DRIVE_API/changes?pageToken=$currentToken&fields=nextPageToken,newStartPageToken,changes(file(id,name,parents,trashed))"
+            check(seenTokens.add(currentToken)) {
+                "Google Drive repeated a page token in fetchChanges; stopping pagination"
+            }
+            val url = "$DRIVE_API/changes?pageToken=$currentToken&fields=nextPageToken,newStartPageToken,changes(removed,file(id,name,parents,trashed))"
             val response = request(accessToken, "GET", url)
 
             val root = JSONObject(response)
@@ -191,6 +195,9 @@ class DriveVaultClient {
 
             for (i in 0 until changesArray.length()) {
                 val change = changesArray.optJSONObject(i) ?: continue
+                val isRemoved = change.optBoolean("removed", false)
+                if (isRemoved) continue
+
                 val fileObj = change.optJSONObject("file") ?: continue
                 val trashed = fileObj.optBoolean("trashed", false)
                 if (trashed) continue
@@ -227,7 +234,12 @@ class DriveVaultClient {
             }
         }
 
-        DriveChangesResult(newFiles = files, newPageToken = latestToken)
+        val finalToken = latestToken
+            ?: throw IllegalStateException("Google Drive changes.list completed without returning a newStartPageToken")
+
+        val uniqueFiles = files.distinctBy { it.id }
+
+        DriveChangesResult(newFiles = uniqueFiles, newPageToken = finalToken)
     }
 
     private fun listAllFiles(accessToken: String, query: String): List<DriveVaultFile> {

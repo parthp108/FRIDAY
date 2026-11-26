@@ -494,25 +494,82 @@ class AndroidDriveSyncEngine(
         folderId: String
     ): Pair<Int, Int> {
         val currentCursor = cloudSyncStore.readCursor()
-        val files = drive.listBatchFiles(accessToken, folderId)
+
+        val files: List<DriveVaultFile>
+        val nextPageToken: String
+        val pageToken = currentCursor.drivePageToken
+
+        if (pageToken == null) {
+            // Establish checkpoint BEFORE baseline scan.
+            val startToken = drive.fetchStartPageToken(accessToken)
+            files = drive.listBatchFiles(accessToken, folderId)
+            nextPageToken = startToken
+        } else {
+            val changesResult = try {
+                drive.fetchChanges(
+                    accessToken = accessToken,
+                    pageToken = pageToken,
+                    folderId = folderId
+                )
+            } catch (e: DriveHttpException) {
+                if (e.statusCode == 410) {
+                    // HTTP 410: Page token expired/invalid. Perform baseline recovery.
+                    val startToken = drive.fetchStartPageToken(accessToken)
+                    val baselineFiles = drive.listBatchFiles(accessToken, folderId)
+                    DriveChangesResult(baselineFiles, startToken)
+                } else {
+                    throw e
+                }
+            }
+
+            files = changesResult.newFiles
+            nextPageToken = changesResult.newPageToken
+        }
+
         var downloaded = 0
         var applied = 0
 
-        for (file in files) {
-            // Do not silently skip corrupt or undecryptable FRIDAY batch files.
-            // A failed batch is surfaced to the user and does not advance the
-            // Room inbox/cursor transaction for that batch.
-            val content = drive.downloadTextFile(accessToken, file.id)
-            val encrypted = json.decodeFromString(EncryptedSyncPayload.serializer(), content)
-            val batch = security.decryptBatch(encrypted)
-            val nextCursor = SyncCursor(
-                drivePageToken = currentCursor.drivePageToken,
-                lastSuccessfulSyncAtMs = System.currentTimeMillis()
+        // A file can appear more than once in a Changes API response.
+        val uniqueFiles = files
+            .filter {
+                it.name.startsWith(DriveVaultClient.BATCH_FILE_PREFIX) &&
+                    it.name.endsWith(DriveVaultClient.BATCH_FILE_SUFFIX)
+            }
+            .distinctBy { it.id }
+
+        for (file in uniqueFiles) {
+            val content = drive.downloadTextFile(
+                accessToken = accessToken,
+                fileId = file.id
             )
-            val result = cloudSyncStore.ingestRemoteBatch(batch, nextCursor)
+
+            val encrypted = json.decodeFromString(
+                EncryptedSyncPayload.serializer(),
+                content
+            )
+
+            val batch = security.decryptBatch(encrypted)
+
+            // Keep the old page token during ingestion of remote batches.
+            val result = cloudSyncStore.ingestRemoteBatch(
+                batch = batch,
+                nextCursor = currentCursor.copy(
+                    lastSuccessfulSyncAtMs = System.currentTimeMillis()
+                )
+            )
+
             downloaded++
             applied += result.appliedOperations
         }
+
+        // Commit the new checkpoint cursor ONLY after successful processing of all changed files.
+        cloudSyncStore.saveCursor(
+            SyncCursor(
+                drivePageToken = nextPageToken,
+                lastSuccessfulSyncAtMs = System.currentTimeMillis()
+            )
+        )
+
         return downloaded to applied
     }
 

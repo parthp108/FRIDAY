@@ -47,6 +47,11 @@ interface CloudSyncStore {
     suspend fun readCursor(): SyncCursor
 
     /**
+     * Commit a new Drive Changes API cursor checkpoint.
+     */
+    suspend fun saveCursor(cursor: SyncCursor)
+
+    /**
      * Process a downloaded batch.
      *
      * Implementations must:

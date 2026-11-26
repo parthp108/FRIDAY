@@ -204,6 +204,17 @@ class DesktopCloudSyncStore internal constructor(
         readState().cursor.toCursor()
     }
 
+    override suspend fun saveCursor(cursor: SyncCursor): Unit = synchronized(lock) {
+        val current = readState()
+        val updated = current.copy(
+            cursor = DesktopCursorState(
+                drivePageToken = cursor.drivePageToken,
+                lastSuccessfulSyncAtMs = cursor.lastSuccessfulSyncAtMs
+            )
+        )
+        writeState(updated)
+    }
+
     override suspend fun ingestRemoteBatch(
         batch: SyncBatch,
         nextCursor: SyncCursor

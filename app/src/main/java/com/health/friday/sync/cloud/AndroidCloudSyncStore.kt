@@ -137,6 +137,19 @@ class AndroidCloudSyncStore(
         )
     }
 
+    override suspend fun saveCursor(cursor: SyncCursor) {
+        val lastSync = cursor.lastSuccessfulSyncAtMs
+        require(lastSync == null || lastSync >= 0L)
+
+        dao.saveCursor(
+            CloudSyncCursorEntity(
+                id = 1,
+                drivePageToken = cursor.drivePageToken,
+                lastSuccessfulSyncAtMs = lastSync
+            )
+        )
+    }
+
     override suspend fun ingestRemoteBatch(
         batch: SyncBatch,
         nextCursor: SyncCursor
