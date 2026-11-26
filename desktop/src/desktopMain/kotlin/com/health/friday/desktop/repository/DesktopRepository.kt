@@ -557,6 +557,13 @@ class DesktopRepository(
         localModelName.value = newModel
     }
 
+    val isDriveConnected: Boolean
+        get() = cloudSyncRuntime.recoveryService.hasSavedAuthorization() &&
+                cloudSyncRuntime.recoveryService.hasLocalMasterKey()
+
+    val desktopSyncStatus: StateFlow<com.health.friday.desktop.sync.cloud.DesktopSyncStatus> =
+        cloudSyncRuntime.syncStatus
+
     fun connectGoogleDrive(credentialsFile: File): String =
         cloudSyncRuntime.recoveryService.connect(credentialsFile)
 
@@ -566,8 +573,8 @@ class DesktopRepository(
     fun restoreGoogleDriveRecoveryKey(passphrase: CharArray): String =
         cloudSyncRuntime.recoveryService.restoreRecoveryKey(passphrase)
 
-    fun syncGoogleDrive(): DesktopDriveSyncResult =
-        kotlinx.coroutines.runBlocking { cloudSyncRuntime.syncEngine.performSync() }
+    suspend fun syncGoogleDrive(): DesktopDriveSyncResult =
+        cloudSyncRuntime.runSync()
 
     fun disconnect() {
     }

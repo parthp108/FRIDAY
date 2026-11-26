@@ -112,12 +112,18 @@ class HudScreenModel(
                 updateState { it.copy(notice = note) }
             }
         }
+
+        screenModelScope.launch(Dispatchers.IO) {
+            repository.desktopSyncStatus.collect { status ->
+                updateState { it.copy(desktopSyncStatus = status, isDriveConnected = repository.isDriveConnected) }
+            }
+        }
     }
 
     fun connectGoogleDrive(credentialsFile: File): String = repository.connectGoogleDrive(credentialsFile)
     fun backUpGoogleDriveRecoveryKey(passphrase: CharArray): String = repository.backUpGoogleDriveRecoveryKey(passphrase)
     fun restoreGoogleDriveRecoveryKey(passphrase: CharArray): String = repository.restoreGoogleDriveRecoveryKey(passphrase)
-    fun syncGoogleDrive(): DesktopDriveSyncResult = repository.syncGoogleDrive()
+    suspend fun syncGoogleDrive(): DesktopDriveSyncResult = repository.syncGoogleDrive()
 
     fun processIntent(intent: HudIntent) {
         when (intent) {

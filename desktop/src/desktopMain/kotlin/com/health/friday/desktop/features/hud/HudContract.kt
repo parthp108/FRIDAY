@@ -23,7 +23,9 @@ data class HudState(
     val healthArchiveRecords: List<HealthArchiveRecordSummary> = emptyList(),
     val reminders: List<FridayReminderDto> = emptyList(),
     val meals: List<FridayMealDto> = emptyList(),
-    val dailySignals: DailySignalDto = DailySignalDto()
+    val dailySignals: DailySignalDto = DailySignalDto(),
+    val desktopSyncStatus: com.health.friday.desktop.sync.cloud.DesktopSyncStatus = com.health.friday.desktop.sync.cloud.DesktopSyncStatus(),
+    val isDriveConnected: Boolean = false
 )
 
 sealed class HudIntent {

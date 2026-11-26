@@ -185,10 +185,22 @@ fun HomeScreen(
     ) {
 
         item {
-            ScreenHeader(
-                title = "Home",
-                subtitle = dateText
-            )
+            val appContainer = (context.applicationContext as? com.health.friday.FridayApplication)?.container
+            val driveSyncStatus by appContainer?.driveSyncStatusRepository?.status?.collectAsState(
+                initial = com.health.friday.sync.cloud.DriveSyncStatus()
+            ) ?: remember { mutableStateOf(com.health.friday.sync.cloud.DriveSyncStatus()) }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ScreenHeader(
+                    title = "Home",
+                    subtitle = dateText
+                )
+                com.health.friday.ui.components.DriveSyncStatusChip(status = driveSyncStatus)
+            }
         }
 
         // ---------------------------------------------------------

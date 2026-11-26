@@ -95,8 +95,10 @@ class DesktopHudScreen : Screen {
                             selectedTabTitle = state.selectedTab.title,
                             personaStyle = state.personaStyle,
                             activeModel = state.activeModel,
+                            syncStatus = state.desktopSyncStatus,
                             onAddWater = { screenModel.processIntent(HudIntent.AddWater(it)) },
                             onOpenAssistant = { screenModel.processIntent(HudIntent.ChangeTab(DesktopNavTab.ASSISTANT)) },
+                            onOpenSettings = { screenModel.processIntent(HudIntent.ChangeTab(DesktopNavTab.SETTINGS)) },
                             onToggleHudMode = { screenModel.processIntent(HudIntent.ToggleHudMode) }
                         )
 
@@ -152,6 +154,9 @@ class DesktopHudScreen : Screen {
                                         apiKey = state.apiKey,
                                         personaStyle = state.personaStyle,
                                         selectedLocalModel = state.activeModel,
+                                        isDriveConnected = state.isDriveConnected,
+                                        lastSyncMs = state.desktopSyncStatus.lastSyncMs,
+                                        driveSyncStatus = state.desktopSyncStatus,
                                         onUpdateSettings = { key, persona, model ->
                                             screenModel.processIntent(HudIntent.UpdateSettings(key, persona, model))
                                         },

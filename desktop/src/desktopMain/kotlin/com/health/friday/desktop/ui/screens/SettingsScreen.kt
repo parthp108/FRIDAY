@@ -12,21 +12,35 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.health.friday.desktop.sync.cloud.DesktopSyncState
+import com.health.friday.desktop.sync.cloud.DesktopSyncStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import javax.swing.JFileChooser
+
+private fun formatRelativeTime(ms: Long): String {
+    if (ms <= 0L) return "Never"
+    val diff = System.currentTimeMillis() - ms
+    return when {
+        diff < 60_000 -> "Just now"
+        diff < 3_600_000 -> "${diff / 60_000}m ago"
+        else -> "${diff / 3_600_000}h ago"
+    }
+}
 
 @Composable
 fun DesktopSettingsScreen(
     apiKey: String,
     personaStyle: String,
     selectedLocalModel: String = "llama3.2:1b",
+    isDriveConnected: Boolean = false,
+    lastSyncMs: Long = 0L,
+    driveSyncStatus: DesktopSyncStatus = DesktopSyncStatus(),
     onUpdateSettings: (String, String, String) -> Unit,
     onDriveConnect: (java.io.File) -> String = { error("Drive connection is not wired.") },
     onDriveBackup: (CharArray) -> String = { error("Drive key backup is not wired.") },
     onDriveRestore: (CharArray) -> String = { error("Drive key restore is not wired.") },
-    onDriveSync: () -> com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult = { error("Drive sync is not wired.") }
+    onDriveSync: suspend () -> com.health.friday.desktop.sync.cloud.DesktopDriveSyncResult = { error("Drive sync is not wired.") }
 ) {
     var keyInput by remember { mutableStateOf(apiKey) }
     var selectedPersona by remember { mutableStateOf(personaStyle) }
@@ -34,21 +48,41 @@ fun DesktopSettingsScreen(
     var localLlmEnabled by remember { mutableStateOf(true) }
 
     val scope = rememberCoroutineScope()
-    val desktopService = remember { com.health.friday.desktop.sync.cloud.DesktopCloudSyncService() }
     var syncRunning by remember { mutableStateOf(false) }
-    var syncStatus by remember {
-        mutableStateOf(
-            if (desktopService.hasSavedAuthorization() && desktopService.hasLocalMasterKey()) {
-                "STATUS: CONNECTED & ENCRYPTED VAULT READY\n\nYour local master key is DPAPI protected under your Windows account. Instant background sync is active across reboots and app updates."
-            } else if (desktopService.hasSavedAuthorization()) {
-                "Google Drive authorized. Restore or back up your recovery key to enable encrypted sync."
-            } else {
-                "Not connected"
-            }
-        )
-    }
+    var actionStatus by remember { mutableStateOf<String?>(null) }
     var passphraseInput by remember { mutableStateOf("") }
     var confirmPassphraseInput by remember { mutableStateOf("") }
+    var showFilePicker by remember { mutableStateOf(false) }
+
+    if (showFilePicker) {
+        LaunchedEffect(Unit) {
+            val dialog = java.awt.FileDialog(null as java.awt.Frame?, "Select Google OAuth credentials JSON", java.awt.FileDialog.LOAD).apply {
+                file = "*.json"
+                isVisible = true
+            }
+            val file = dialog.file?.let { java.io.File(dialog.directory, it) }
+            showFilePicker = false
+            if (file != null) {
+                syncRunning = true
+                actionStatus = "Opening browser for Google authorization..."
+                val result = runCatching { withContext(Dispatchers.IO) { onDriveConnect(file) } }
+                actionStatus = result.fold(
+                    onSuccess = { it },
+                    onFailure = { "CONNECT FAILED: ${it.message ?: it}" }
+                )
+                syncRunning = false
+            }
+        }
+    }
+
+    val displayStatus = when {
+        syncRunning || driveSyncStatus.state == DesktopSyncState.SYNCING -> "SYNCING: Encrypted data exchange in progress..."
+        actionStatus != null -> actionStatus!!
+        driveSyncStatus.state == DesktopSyncState.AUTH_REQUIRED -> "RECONNECT REQUIRED: Google Drive access requires authorization."
+        driveSyncStatus.state == DesktopSyncState.FAILED -> "SYNC FAILED: ${driveSyncStatus.errorMessage.orEmpty()}"
+        isDriveConnected -> "STATUS: CONNECTED & ENCRYPTED VAULT READY\nLast sync: ${formatRelativeTime(driveSyncStatus.lastSyncMs.takeIf { it > 0 } ?: lastSyncMs)}"
+        else -> "Not connected to Google Drive"
+    }
 
     LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         // CARD 0: ENCRYPTED GOOGLE DRIVE RECOVERY & SYNC
@@ -78,35 +112,10 @@ fun DesktopSettingsScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
                             enabled = !syncRunning,
-                            onClick = {
-                                val chooser = JFileChooser().apply {
-                                    dialogTitle = "Select Google Desktop OAuth credentials JSON"
-                                    fileSelectionMode = JFileChooser.FILES_ONLY
-                                }
-
-                                if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                                    val credentialsFile = chooser.selectedFile
-                                    syncRunning = true
-                                    syncStatus = "Opening browser for Google authorization..."
-
-                                    scope.launch {
-                                        val result = runCatching {
-                                            withContext(Dispatchers.IO) {
-                                                onDriveConnect(credentialsFile)
-                                            }
-                                        }
-
-                                        syncStatus = result.fold(
-                                            onSuccess = { it },
-                                            onFailure = { "CONNECT FAILED: ${it.message ?: it}" }
-                                        )
-                                        syncRunning = false
-                                    }
-                                }
-                            },
+                            onClick = { showFilePicker = true },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
                         ) {
-                            Text("1. Connect Google Drive")
+                            Text(if (isDriveConnected) "Reconnect Google Drive" else "1. Connect Google Drive")
                         }
                     }
 
@@ -144,7 +153,7 @@ fun DesktopSettingsScreen(
                             onClick = {
                                 val phrase = passphraseInput.toCharArray()
                                 syncRunning = true
-                                syncStatus = "Backing up recovery key to Google Drive..."
+                                actionStatus = "Backing up recovery key to Google Drive..."
 
                                 scope.launch {
                                     val result = runCatching {
@@ -153,7 +162,7 @@ fun DesktopSettingsScreen(
                                         }
                                     }
 
-                                    syncStatus = result.fold(
+                                    actionStatus = result.fold(
                                         onSuccess = { it },
                                         onFailure = { "BACKUP FAILED: ${it.message ?: it}" }
                                     )
@@ -172,7 +181,7 @@ fun DesktopSettingsScreen(
                             onClick = {
                                 val phrase = passphraseInput.toCharArray()
                                 syncRunning = true
-                                syncStatus = "Restoring key from Google Drive..."
+                                actionStatus = "Restoring key from Google Drive..."
 
                                 scope.launch {
                                     val result = runCatching {
@@ -181,7 +190,7 @@ fun DesktopSettingsScreen(
                                         }
                                     }
 
-                                    syncStatus = result.fold(
+                                    actionStatus = result.fold(
                                         onSuccess = { it },
                                         onFailure = { "RESTORE FAILED: ${it.message ?: it}" }
                                     )
@@ -200,16 +209,14 @@ fun DesktopSettingsScreen(
                         enabled = !syncRunning,
                         onClick = {
                             syncRunning = true
-                            syncStatus = "Synchronizing encrypted batches..."
+                            actionStatus = "Synchronizing encrypted batches..."
 
                             scope.launch {
                                 val result = runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        onDriveSync()
-                                    }
+                                    onDriveSync()
                                 }
 
-                                syncStatus = result.fold(
+                                actionStatus = result.fold(
                                     onSuccess = { res ->
                                         "SYNC COMPLETED\nUploaded batches: ${res.uploadedBatches}\nUploaded operations: ${res.uploadedOperations}\nDownloaded batches: ${res.downloadedBatches}\nApplied operations: ${res.appliedOperations}\nDuplicate/stale operations: ${res.duplicateOrStaleOperations}"
                                     },
@@ -220,11 +227,11 @@ fun DesktopSettingsScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
                     ) {
-                        Text(if (syncRunning) "Working..." else "Sync Now")
+                        Text(if (syncRunning || driveSyncStatus.state == DesktopSyncState.SYNCING) "Working..." else "Sync Now")
                     }
 
                     Text(
-                        syncStatus,
+                        displayStatus,
                         color = Color(0xFFCBD5E1),
                         fontSize = 12.sp
                     )

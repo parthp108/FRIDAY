@@ -7,7 +7,18 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+enum class DesktopSyncState { IDLE, SYNCING, SUCCESS, FAILED, AUTH_REQUIRED }
+
+data class DesktopSyncStatus(
+    val state: DesktopSyncState = DesktopSyncState.IDLE,
+    val lastSyncMs: Long = 0L,
+    val errorMessage: String? = null
+)
 
 /** Shares the same OAuth token store, DPAPI key vault and Drive client for settings and sync. */
 class DesktopCloudSyncRuntime(
@@ -20,6 +31,9 @@ class DesktopCloudSyncRuntime(
     private val drive = DesktopDriveVaultClient()
 
     private val syncScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val _syncStatus = MutableStateFlow(DesktopSyncStatus())
+    val syncStatus: StateFlow<DesktopSyncStatus> = _syncStatus.asStateFlow()
 
     val store: DesktopCloudSyncStore = DesktopCloudSyncStore(
         deviceId = deviceId,
@@ -43,6 +57,31 @@ class DesktopCloudSyncRuntime(
         store = store
     )
 
+    suspend fun runSync(): DesktopDriveSyncResult {
+        if (!oauth.hasSavedAuthorization() || !keyVault.hasKey()) {
+            val state = if (!oauth.hasSavedAuthorization()) DesktopSyncState.AUTH_REQUIRED else DesktopSyncState.IDLE
+            _syncStatus.value = _syncStatus.value.copy(state = state, errorMessage = "Authorization or key required")
+            error("Authorization or key required")
+        }
+        _syncStatus.value = _syncStatus.value.copy(state = DesktopSyncState.SYNCING)
+        return try {
+            val res = syncEngine.performSync()
+            val now = System.currentTimeMillis()
+            _syncStatus.value = DesktopSyncStatus(
+                state = DesktopSyncState.SUCCESS,
+                lastSyncMs = now,
+                errorMessage = null
+            )
+            res
+        } catch (e: Exception) {
+            val msg = e.message ?: e.javaClass.simpleName
+            val isAuth = msg.contains("401") || msg.contains("auth", ignoreCase = true)
+            val state = if (isAuth) DesktopSyncState.AUTH_REQUIRED else DesktopSyncState.FAILED
+            _syncStatus.value = _syncStatus.value.copy(state = state, errorMessage = msg)
+            throw e
+        }
+    }
+
     private val instantSyncTrigger by lazy {
         DebouncedSyncTrigger(
             scope = syncScope,
@@ -53,7 +92,7 @@ class DesktopCloudSyncRuntime(
             },
             action = {
                 if (oauth.hasSavedAuthorization() && keyVault.hasKey()) {
-                    syncEngine.performSync()
+                    runCatching { runSync() }
                 }
             }
         )
@@ -71,7 +110,7 @@ class DesktopCloudSyncRuntime(
                 delay(BACKGROUND_SYNC_INTERVAL_MS)
                 if (oauth.hasSavedAuthorization() && keyVault.hasKey()) {
                     runCatching {
-                        syncEngine.performSync()
+                        runSync()
                     }.onFailure { error ->
                         System.err.println(
                             "FRIDAY Desktop background sync failed: ${error.message}"
