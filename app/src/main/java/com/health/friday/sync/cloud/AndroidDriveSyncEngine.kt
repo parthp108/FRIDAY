@@ -407,56 +407,88 @@ class AndroidDriveSyncEngine(
         envelope
     }
 
-    suspend fun performSync(accessToken: String): DriveSyncResult = withContext(Dispatchers.IO) {
-        require(accessToken.isNotBlank()) { "accessToken must not be blank" }
-        check(security.hasLocalMasterKey()) {
-            "FRIDAY cloud key is not initialized. Back up or restore the recovery key first."
+    suspend fun performSync(accessToken: String): DriveSyncResult =
+        withContext(Dispatchers.IO) {
+            require(accessToken.isNotBlank()) {
+                "accessToken must not be blank"
+            }
+            check(security.hasLocalMasterKey()) {
+                "FRIDAY cloud key is not initialized. Back up or restore the recovery key first."
+            }
+
+            val folderId = drive.ensureVaultFolder(accessToken)
+
+            var backfilledRecords = 0
+            var uploadResult: Pair<Int, Int>? = null
+            var downloadResult: Pair<Int, Int>? = null
+
+            var backfillFailure: Exception? = null
+            var uploadFailure: Exception? = null
+            var downloadFailure: Exception? = null
+
+            // Legacy backfill.
+            try {
+                backfilledRecords = backfill.run().totalRecords
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                backfillFailure = e
+            }
+
+            // Upload already-pending operations even if backfill failed.
+            try {
+                uploadResult = uploadPendingOutbox(
+                    accessToken = accessToken,
+                    folderId = folderId
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                uploadFailure = e
+            }
+
+            // Always attempt download after the upload path attempts.
+            try {
+                downloadResult = downloadRemoteBatches(
+                    accessToken = accessToken,
+                    folderId = folderId
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                downloadFailure = e
+            }
+
+            val failures = listOfNotNull(
+                backfillFailure,
+                uploadFailure,
+                downloadFailure
+            )
+
+            if (failures.isNotEmpty()) {
+                val primary = failures.firstOrNull {
+                    it is DriveAuthException ||
+                        it is DriveAuthorizationRequiredException
+                } ?: failures.first()
+
+                failures
+                    .filter { it !== primary }
+                    .forEach(primary::addSuppressed)
+
+                throw primary
+            }
+
+            val uploaded = checkNotNull(uploadResult)
+            val downloaded = checkNotNull(downloadResult)
+
+            DriveSyncResult(
+                backfilledRecords = backfilledRecords,
+                uploadedBatches = uploaded.first,
+                uploadedOperations = uploaded.second,
+                downloadedBatches = downloaded.first,
+                appliedOperations = downloaded.second
+            )
         }
-        val folderId = drive.ensureVaultFolder(accessToken)
-        val backfillReport = backfill.run()
-
-        var uploadBatches = 0
-        var uploadOps = 0
-        var uploadError: Throwable? = null
-
-        try {
-            val uploadResult = uploadPendingOutbox(accessToken, folderId)
-            uploadBatches = uploadResult.first
-            uploadOps = uploadResult.second
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            uploadError = e
-            System.err.println("[AndroidDriveSyncEngine] Upload path failed: ${e.message}")
-        }
-
-        var downloadBatches = 0
-        var downloadOps = 0
-        var downloadError: Throwable? = null
-
-        try {
-            val downloadResult = downloadRemoteBatches(accessToken, folderId)
-            downloadBatches = downloadResult.first
-            downloadOps = downloadResult.second
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            downloadError = e
-            System.err.println("[AndroidDriveSyncEngine] Download path failed: ${e.message}")
-        }
-
-        if (uploadError != null && downloadError != null) {
-            throw uploadError
-        }
-
-        DriveSyncResult(
-            backfilledRecords = backfillReport.totalRecords,
-            uploadedBatches = uploadBatches,
-            uploadedOperations = uploadOps,
-            downloadedBatches = downloadBatches,
-            appliedOperations = downloadOps
-        )
-    }
 
     private suspend fun uploadPendingOutbox(
         accessToken: String,

@@ -44,52 +44,77 @@ class DesktopDriveSyncEngine internal constructor(
 
     private suspend fun performSyncLocked(): DesktopDriveSyncResult {
         require(deviceId.isNotBlank())
+
         val masterKey = keyVault.load()
-            ?: error("FRIDAY desktop cloud key is not initialized. Restore the recovery key first.")
+            ?: error(
+                "FRIDAY desktop cloud key is not initialized. " +
+                    "Restore the recovery key first."
+            )
+
         try {
             val accessToken = oauth.accessToken()
+
+            // Shared prerequisite for both paths.
             val folderId = drive.ensureVaultFolder(accessToken)
 
-            var uploadBatches = 0
-            var uploadOps = 0
-            var uploadError: Throwable? = null
+            var uploadResult: Pair<Int, Int>? = null
+            var downloadResult: Pair<Int, Pair<Int, Int>>? = null
 
+            var uploadFailure: Exception? = null
+            var downloadFailure: Exception? = null
+
+            // PATH 1: Upload pending desktop operations.
             try {
-                val upload = uploadPending(accessToken, folderId, masterKey)
-                uploadBatches = upload.first
-                uploadOps = upload.second
-            } catch (e: Throwable) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                uploadError = e
-                System.err.println("[DesktopDriveSyncEngine] Upload path failed: ${e.message}")
+                uploadResult = uploadPending(
+                    accessToken = accessToken,
+                    folderId = folderId,
+                    masterKey = masterKey
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                uploadFailure = e
             }
 
-            var downloadedBatches = 0
-            var appliedOps = 0
-            var duplicateOps = 0
-            var downloadError: Throwable? = null
-
+            // PATH 2: Download and apply remote operations.
+            // Do not skip this just because uploading failed.
             try {
-                val download = downloadBatches(accessToken, folderId, masterKey)
-                downloadedBatches = download.first
-                appliedOps = download.second.first
-                duplicateOps = download.second.second
-            } catch (e: Throwable) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                downloadError = e
-                System.err.println("[DesktopDriveSyncEngine] Download path failed: ${e.message}")
+                downloadResult = downloadBatches(
+                    accessToken = accessToken,
+                    folderId = folderId,
+                    masterKey = masterKey
+                )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                downloadFailure = e
             }
 
-            if (uploadError != null && downloadError != null) {
-                throw uploadError
+            // Preserve both failures for diagnostics.
+            val failure = uploadFailure ?: downloadFailure
+
+            if (failure != null) {
+                val secondary = when {
+                    failure === uploadFailure -> downloadFailure
+                    else -> uploadFailure
+                }
+
+                if (secondary != null && secondary !== failure) {
+                    failure.addSuppressed(secondary)
+                }
+
+                throw failure
             }
+
+            val uploaded = checkNotNull(uploadResult)
+            val downloaded = checkNotNull(downloadResult)
 
             return DesktopDriveSyncResult(
-                uploadedBatches = uploadBatches,
-                uploadedOperations = uploadOps,
-                downloadedBatches = downloadedBatches,
-                appliedOperations = appliedOps,
-                duplicateOrStaleOperations = duplicateOps
+                uploadedBatches = uploaded.first,
+                uploadedOperations = uploaded.second,
+                downloadedBatches = downloaded.first,
+                appliedOperations = downloaded.second.first,
+                duplicateOrStaleOperations = downloaded.second.second
             )
         } finally {
             masterKey.destroy()
